@@ -203,7 +203,6 @@ fun CompletedGameDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Message
                     Text(
                         text = getCompletedMessage(language, isWin),
                         color = Color.White.copy(alpha = 0.95f),
@@ -271,7 +270,7 @@ fun getCompletedMessage(language: Language, isWin: Boolean): String {
 
 fun getOkText(language: Language): String {
     return when (language) {
-        Language.FRENCH -> "OK"
+        Language.FRENCH -> "D'accord"
         Language.ENGLISH -> "OK"
         Language.ARABIC -> "حسناً"
     }
