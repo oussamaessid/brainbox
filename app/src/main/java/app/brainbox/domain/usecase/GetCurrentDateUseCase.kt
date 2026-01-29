@@ -6,6 +6,8 @@ class GetCurrentDateUseCase(
     private val repository: GameRepository
 ) {
     operator fun invoke(): String {
-        return repository.getCurrentDate()
+        val currentDate = repository.getCurrentDate()
+        println("📅 GetCurrentDateUseCase: $currentDate")
+        return currentDate
     }
 }

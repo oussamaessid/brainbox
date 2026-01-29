@@ -3,7 +3,6 @@ package app.brainbox.data.network
 import app.brainbox.domain.repository.Language
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -26,16 +25,14 @@ class CategoryNetworkService {
             try {
                 val url = URL(getUrlForLanguage(language))
                 val connection = url.openConnection() as HttpURLConnection
-
                 connection.requestMethod = "GET"
-                connection.connectTimeout = 10000 // 10 seconds
+                connection.connectTimeout = 10000
                 connection.readTimeout = 10000
 
                 val responseCode = connection.responseCode
-
                 if (responseCode == HttpURLConnection.HTTP_OK) {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
-                    parseJsonResponse(response)
+                    parseJsonWithDuplicates(response)
                 } else {
                     throw Exception("HTTP error code: $responseCode")
                 }
@@ -45,21 +42,77 @@ class CategoryNetworkService {
         }
     }
 
-    private fun parseJsonResponse(jsonString: String): Map<String, List<String>> {
-        val result = mutableMapOf<String, List<String>>()
-        val jsonObject = JSONObject(jsonString)
+    /**
+     * 🔥 PARSING MANUEL POUR GÉRER LES DOUBLONS DE CLÉS
+     *
+     * Problème: JSON standard (org.json.JSONObject ou Gson) écrase les clés dupliquées
+     * Solution: Parser manuellement avec regex pour détecter TOUTES les occurrences
+     *
+     * Comportement:
+     * - "Fruits": [...] (1ère occurrence) → clé: "Fruits"
+     * - "Fruits": [...] (2ème occurrence) → clé: "Fruits_2"
+     * - "Fruits": [...] (3ème occurrence) → clé: "Fruits_3"
+     * - etc.
+     *
+     * Ainsi, chaque ligne du JSON = 1 jour de jeu, dans l'ordre!
+     */
+    private fun parseJsonWithDuplicates(jsonString: String): Map<String, List<String>> {
+        val result = linkedMapOf<String, List<String>>()
+        val categoryCounter = mutableMapOf<String, Int>()
 
-        val keys = jsonObject.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val jsonArray = jsonObject.getJSONArray(key)
-            val items = mutableListOf<String>()
+        // Regex améliorée pour gérer:
+        // - Lettres, chiffres, underscores, tirets
+        // - Espaces dans les noms de catégories
+        // - Caractères spéciaux comme "Star-anise"
+        val regex = """"([\w\s-]+)":\s*\[([^\]]+)\]""".toRegex()
 
-            for (i in 0 until jsonArray.length()) {
-                items.add(jsonArray.getString(i))
+        println("🔍 PARSING MANUEL DU JSON...")
+        println("   Recherche de toutes les catégories (incluant doublons)...")
+
+        var dayIndex = 0
+        regex.findAll(jsonString).forEach { match ->
+            val categoryName = match.groupValues[1].trim()
+            val itemsString = match.groupValues[2]
+
+            // Extraire les items individuels
+            val items = itemsString
+                .split(",")
+                .map { it.trim().removeSurrounding("\"") }
+                .filter { it.isNotEmpty() }
+
+            // Créer une clé unique pour les doublons
+            val uniqueKey = if (categoryCounter.containsKey(categoryName)) {
+                categoryCounter[categoryName] = categoryCounter[categoryName]!! + 1
+                "${categoryName}_${categoryCounter[categoryName]}"
+            } else {
+                categoryCounter[categoryName] = 1
+                categoryName  // Première occurrence: pas de suffixe
             }
 
-            result[key] = items
+            result[uniqueKey] = items
+            dayIndex++
+
+            // Afficher les 10 premiers jours pour debug
+            if (dayIndex <= 10) {
+                val preview = items.take(3).joinToString(", ")
+                println("   [$dayIndex] $uniqueKey: $preview... (${items.size} items)")
+            }
+        }
+
+        if (dayIndex > 10) {
+            println("   ... et ${dayIndex - 10} autres catégories")
+        }
+
+        println("✅ PARSING TERMINÉ:")
+        println("   • ${result.size} catégories chargées")
+        println("   • ${categoryCounter.filter { it.value > 1 }.size} catégories avec doublons")
+
+        val duplicates = categoryCounter.filter { it.value > 1 }
+        if (duplicates.isNotEmpty()) {
+            println("📊 DOUBLONS DÉTECTÉS:")
+            duplicates.forEach { (name, count) ->
+                println("   • $name: $count occurrences → renommées ${name}_2, ${name}_3, ...")
+            }
         }
 
         return result

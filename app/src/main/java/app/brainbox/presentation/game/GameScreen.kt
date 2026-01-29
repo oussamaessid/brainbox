@@ -37,6 +37,7 @@ fun GameScreen(
     val pulseScale = remember { Animatable(1f) }
 
     LaunchedEffect(language, date) {
+        println("🎬 GameScreen LaunchedEffect - Chargement du challenge")
         viewModel.loadDailyChallenge(language, date)
     }
 
@@ -96,9 +97,13 @@ fun GameScreen(
                 error = uiState.error!!,
                 language = language,
                 onRetry = {
+                    println("🔄 Retry button clicked")
                     viewModel.loadDailyChallenge(language, date)
                 },
-                onBackToMenu = onBackToMenu
+                onBackToMenu = {
+                    println("🔙 Back to menu button clicked")
+                    onBackToMenu()
+                }
             )
         }
         // Game content
@@ -143,7 +148,8 @@ fun GameScreen(
                     uiState.currentCategory?.let { category ->
                         WordsCard(
                             items = category.items,
-                            revealedCount = uiState.gameState.revealedCount
+                            revealedCount = uiState.gameState.revealedCount,
+                            language = language  // 🔥 LIGNE AJOUTÉE POUR LE SUPPORT RTL
                         )
                     }
 
@@ -187,6 +193,7 @@ fun GameScreen(
                     score = if (uiState.gameState.isWin) uiState.gameState.lives * 20 else 0,
                     language = language,
                     onPlayAgain = {
+                        println("🎮 Play Again clicked - Retour au menu")
                         viewModel.resetGame()
                         onBackToMenu()
                     }
@@ -296,7 +303,7 @@ fun ErrorScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = getErrorMessage(language),
+                    text = error,
                     fontSize = 16.sp,
                     color = Color(0xFF2E1A47).copy(alpha = 0.8f),
                     textAlign = TextAlign.Center,
@@ -373,17 +380,9 @@ fun getLoadingSubtext(language: Language): String {
 // Language strings for error
 fun getErrorTitle(language: Language): String {
     return when (language) {
-        Language.ENGLISH -> "Connection Error"
-        Language.FRENCH -> "Erreur de connexion"
-        Language.ARABIC -> "خطأ في الاتصال"
-    }
-}
-
-fun getErrorMessage(language: Language): String {
-    return when (language) {
-        Language.ENGLISH -> "Unable to load the game. Please check your internet connection and try again."
-        Language.FRENCH -> "Impossible de charger le jeu. Veuillez vérifier votre connexion Internet et réessayer."
-        Language.ARABIC -> "تعذر تحميل اللعبة. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى."
+        Language.ENGLISH -> "Oops!"
+        Language.FRENCH -> "Oups !"
+        Language.ARABIC -> "عذراً!"
     }
 }
 

@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.brainbox.domain.repository.Language
@@ -103,7 +104,8 @@ fun GameHeader(
 @Composable
 fun WordsCard(
     items: List<String>,
-    revealedCount: Int
+    revealedCount: Int,
+    language: Language = Language.ENGLISH  // 🔥 Ajout du paramètre language
 ) {
     Card(
         modifier = Modifier
@@ -125,7 +127,8 @@ fun WordsCard(
                 AnimatedWordCard(
                     word = item,
                     index = index,
-                    isRevealed = index < revealedCount
+                    isRevealed = index < revealedCount,
+                    language = language  // 🔥 Passer le paramètre language
                 )
                 if (index < items.size - 1) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -136,7 +139,15 @@ fun WordsCard(
 }
 
 @Composable
-fun AnimatedWordCard(word: String, index: Int, isRevealed: Boolean) {
+fun AnimatedWordCard(
+    word: String,
+    index: Int,
+    isRevealed: Boolean,
+    language: Language = Language.ENGLISH  // 🔥 Ajout du paramètre language
+) {
+    // 🔥 Détecter si c'est de l'arabe
+    val isArabic = language == Language.ARABIC
+
     AnimatedVisibility(
         visible = isRevealed,
         enter = fadeIn(animationSpec = tween(300)) +
@@ -159,25 +170,56 @@ fun AnimatedWordCard(word: String, index: Int, isRevealed: Boolean) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                // 🔥 IMPORTANT: Aligner à droite pour l'arabe
+                horizontalArrangement = if (isArabic)
+                    Arrangement.End
+                else
+                    Arrangement.Start
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0xFFFFD93D), Color(0xFFFF8008))
-                            ),
-                            CircleShape
+                // 🔥 IMPORTANT: Inverser l'ordre pour l'arabe
+                if (isArabic) {
+                    // ARABE: Texte d'abord (à droite), puis point (à gauche)
+                    Text(
+                        text = word,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        style = LocalTextStyle.current.copy(
+                            textDirection = TextDirection.Rtl  // 🔥 Direction RTL
                         )
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = word,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(0xFFFFD93D), Color(0xFFFF8008))
+                                ),
+                                CircleShape
+                            )
+                    )
+                } else {
+                    // FRANÇAIS/ANGLAIS: Point d'abord, puis texte
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(0xFFFFD93D), Color(0xFFFF8008))
+                                ),
+                                CircleShape
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = word,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }
