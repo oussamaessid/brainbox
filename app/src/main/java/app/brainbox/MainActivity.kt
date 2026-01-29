@@ -21,21 +21,25 @@ import app.brainbox.ads.AdManager
 import app.brainbox.data.repository.GameRepositoryImpl
 import app.brainbox.domain.repository.Language
 import app.brainbox.domain.usecase.*
+import app.brainbox.presentation.components.TutorialDialog
 import app.brainbox.presentation.game.GameScreen
 import app.brainbox.presentation.game.GameViewModel
 import app.brainbox.presentation.language.LanguageSelectionScreen
+import app.brainbox.utils.PreferencesManager
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var viewModel: GameViewModel
     private lateinit var adManager: AdManager
+    private lateinit var preferencesManager: PreferencesManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         adManager = AdManager(this)
+        preferencesManager = PreferencesManager(this)
 
-        val repository = GameRepositoryImpl()
+        val repository = GameRepositoryImpl(this)
         val getDailyChallengeUseCase = GetDailyChallengeUseCase(repository)
         val getCurrentDateUseCase = GetCurrentDateUseCase(repository)
         val validateGuessUseCase = ValidateGuessUseCase()
@@ -48,44 +52,62 @@ class MainActivity : ComponentActivity() {
             calculateScoreUseCase = calculateScoreUseCase
         )
 
-        // Charger l'annonce à l'ouverture
         adManager.loadAppOpenAd {
-            // Afficher l'annonce quand elle est chargée
             adManager.showAppOpenAd(this)
         }
 
         setContent {
             MaterialTheme {
-                BrainBoxApp(viewModel, adManager)
+                BrainBoxApp(
+                    viewModel = viewModel,
+                    adManager = adManager,
+                    preferencesManager = preferencesManager
+                )
             }
         }
     }
 }
 
 @Composable
-fun BrainBoxApp(viewModel: GameViewModel, adManager: AdManager) {
+fun BrainBoxApp(
+    viewModel: GameViewModel,
+    adManager: AdManager,
+    preferencesManager: PreferencesManager
+) {
     var selectedLanguage by remember { mutableStateOf<Language?>(null) }
     var showCompletedDialog by remember { mutableStateOf(false) }
     var completedLanguage by remember { mutableStateOf<Language?>(null) }
+
+    val isFirstLaunch = remember { preferencesManager.isFirstLaunch() }
+    var showTutorial by remember { mutableStateOf(isFirstLaunch) }
+
     val uiState by viewModel.uiState.collectAsState()
+
+    if (showTutorial) {
+        TutorialDialog(
+            language = Language.ENGLISH,
+            onDismiss = {
+                showTutorial = false
+                if (isFirstLaunch) {
+                    preferencesManager.setFirstLaunchComplete()
+                }
+            }
+        )
+    }
 
     if (selectedLanguage == null) {
         LanguageSelectionScreen(
             adManager = adManager,
             onLanguageSelected = { language ->
-                // Vérifie si le jeu pour cette langue est déjà terminé
                 if (viewModel.isGameCompleted(language, null)) {
-                    // Montre l'alerte si le jeu est déjà complété
                     completedLanguage = language
                     showCompletedDialog = true
                 } else {
-                    // Lance le jeu si pas encore complété
                     selectedLanguage = language
                 }
             }
         )
 
-        // Alerte pour les jeux déjà complétés
         if (showCompletedDialog && completedLanguage != null) {
             CompletedGameDialog(
                 language = completedLanguage!!,
@@ -101,9 +123,8 @@ fun BrainBoxApp(viewModel: GameViewModel, adManager: AdManager) {
             viewModel = viewModel,
             adManager = adManager,
             language = selectedLanguage!!,
-            date = null, // null pour la date actuelle
+            date = null,
             onBackToMenu = {
-                // Retour à l'écran de sélection de langue
                 selectedLanguage = null
             }
         )
@@ -154,14 +175,12 @@ fun CompletedGameDialog(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Emoji Icon
                     Text(
                         text = if (isWin) "🏆" else "💔",
                         fontSize = 72.sp,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    // Title
                     Text(
                         text = if (isWin) getWinTitle(language) else getLoseTitle(language),
                         color = Color.White,
@@ -171,7 +190,6 @@ fun CompletedGameDialog(
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    // Divider
                     Box(
                         modifier = Modifier
                             .width(100.dp)
@@ -195,7 +213,6 @@ fun CompletedGameDialog(
                         modifier = Modifier.padding(bottom = 32.dp)
                     )
 
-                    // OK Button
                     Button(
                         onClick = onDismiss,
                         modifier = Modifier

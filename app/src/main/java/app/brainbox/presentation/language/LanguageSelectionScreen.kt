@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,13 +21,17 @@ import androidx.compose.ui.unit.sp
 import app.brainbox.ads.AdManager
 import app.brainbox.domain.repository.Language
 import app.brainbox.presentation.components.BannerAdView
+import app.brainbox.presentation.components.TutorialDialog
 
 @Composable
 fun LanguageSelectionScreen(
     adManager: AdManager,
-    onLanguageSelected: (Language) -> Unit
+    onLanguageSelected: (Language) -> Unit,
+    onShowTutorial: (Language) -> Unit = {}
 ) {
     val bannerAd = remember { adManager.createBannerAdView(isLanguageScreen = true) }
+    var showTutorial by remember { mutableStateOf(false) }
+    var selectedTutorialLanguage by remember { mutableStateOf(Language.ENGLISH) }
 
     Box(
         modifier = Modifier
@@ -53,6 +59,29 @@ fun LanguageSelectionScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
+                // Info button at the top
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    IconButton(
+                        onClick = {
+                            selectedTutorialLanguage = Language.ENGLISH
+                            showTutorial = true
+                        },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "How to Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 Text(
                     text = "✨ BRAINBOX ✨",
                     fontSize = 42.sp,
@@ -111,7 +140,22 @@ fun LanguageSelectionScreen(
                 )
             }
 
-            BannerAdView(bannerAd)
+            // Banner Ad with horizontal margins
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+            ) {
+                BannerAdView(bannerAd)
+            }
+        }
+
+        // Tutorial Dialog
+        if (showTutorial) {
+            TutorialDialog(
+                language = selectedTutorialLanguage,
+                onDismiss = { showTutorial = false }
+            )
         }
     }
 }

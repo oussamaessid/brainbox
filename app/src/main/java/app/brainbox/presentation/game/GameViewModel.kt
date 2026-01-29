@@ -17,7 +17,9 @@ data class GameUiState(
     val currentCategory: Category? = null,
     val gameState: GameState = GameState(),
     val showDialog: Boolean = false,
-    val language: Language = Language.ENGLISH
+    val language: Language = Language.ENGLISH,
+    val isLoading: Boolean = false,
+    val error: String? = null
 )
 
 class GameViewModel(
@@ -30,33 +32,51 @@ class GameViewModel(
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
-    // Set pour garder les jeux complétés par langue
     private val completedGames = mutableSetOf<String>()
-    // Map pour garder si le jeu a été gagné ou perdu
     private val gameResults = mutableMapOf<String, Boolean>()
 
     fun loadDailyChallenge(language: Language, date: String? = null) {
         viewModelScope.launch {
-            val currentDate = date ?: getCurrentDateUseCase()
-            val gameKey = "${language.name}_$currentDate"
+            try {
+                println("→ Début loadDailyChallenge - langue: $language")
+                _uiState.update { it.copy(isLoading = true, error = null) }
 
-            // Vérifie si ce jeu a déjà été complété
-            if (completedGames.contains(gameKey)) {
-                // Ne charge pas le jeu s'il est déjà terminé
-                return@launch
-            }
+                val currentDate = date ?: getCurrentDateUseCase()
+                println("→ Date utilisée: $currentDate")
 
-            val challenge = getDailyChallengeUseCase(language, currentDate)
+                // getDailyChallengeUseCase est maintenant suspend
+                val challenge = getDailyChallengeUseCase(language, currentDate)
 
-            challenge?.let {
-                val category = it.categories.firstOrNull()
-                _uiState.update { state ->
-                    state.copy(
-                        currentDate = currentDate,
-                        currentCategory = category,
-                        language = language,
-                        gameState = GameState(), // Reset le jeu
-                        showDialog = false
+                if (challenge != null) {
+                    println("→ Challenge trouvé - catégorie: ${challenge.categories.firstOrNull()?.name}")
+                    val category = challenge.categories.firstOrNull()
+                    _uiState.update { state ->
+                        state.copy(
+                            currentDate = currentDate,
+                            currentCategory = category,
+                            language = language,
+                            gameState = GameState(),
+                            showDialog = false,
+                            isLoading = false,
+                            error = null
+                        )
+                    }
+                } else {
+                    println("→ AUCUN challenge pour $currentDate")
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Aucun défi trouvé pour la date $currentDate"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                println("→ Erreur loadDailyChallenge: ${e.message}")
+                e.printStackTrace()
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = "Erreur chargement : ${e.message}"
                     )
                 }
             }
@@ -105,15 +125,16 @@ class GameViewModel(
         val currentCategory = currentState.currentCategory ?: return
         val guess = currentState.gameState.userGuess
 
+        if (guess.isBlank()) return
+
         val isCorrect = validateGuessUseCase(guess, currentCategory.name)
 
         if (isCorrect) {
             val scoreToAdd = calculateScoreUseCase(currentState.gameState.lives)
             val gameKey = "${currentState.language.name}_${currentState.currentDate}"
 
-            // Marque le jeu comme complété et gagné
             completedGames.add(gameKey)
-            gameResults[gameKey] = true // Gagné
+            gameResults[gameKey] = true
 
             _uiState.update { state ->
                 state.copy(
@@ -127,7 +148,6 @@ class GameViewModel(
             }
         } else {
             val newLives = currentState.gameState.lives - 1
-            val currentCategory = currentState.currentCategory!!
             val newRevealedCount = minOf(
                 currentState.gameState.revealedCount + 1,
                 currentCategory.items.size
@@ -146,16 +166,16 @@ class GameViewModel(
             } else {
                 val gameKey = "${currentState.language.name}_${currentState.currentDate}"
 
-                // Marque le jeu comme complété et perdu
                 completedGames.add(gameKey)
-                gameResults[gameKey] = false // Perdu
+                gameResults[gameKey] = false
 
                 _uiState.update { state ->
                     state.copy(
                         gameState = state.gameState.copy(
                             lives = 0,
                             isWin = false,
-                            isGameOver = true
+                            isGameOver = true,
+                            revealedCount = currentCategory.items.size
                         ),
                         showDialog = true
                     )
@@ -165,12 +185,7 @@ class GameViewModel(
     }
 
     fun onPlayAgain() {
-        _uiState.update { state ->
-            state.copy(
-                gameState = GameState(),
-                showDialog = false
-            )
-        }
+        loadDailyChallenge(_uiState.value.language, _uiState.value.currentDate)
     }
 
     fun dismissDialog() {
@@ -178,8 +193,12 @@ class GameViewModel(
     }
 
     fun resetGame() {
-        _uiState.update {
-            GameUiState()
-        }
+        completedGames.clear()
+        gameResults.clear()
+        _uiState.update { GameUiState() }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
     }
 }
