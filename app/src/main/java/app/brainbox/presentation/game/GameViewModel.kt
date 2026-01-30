@@ -6,6 +6,7 @@ import app.brainbox.domain.model.Category
 import app.brainbox.domain.model.GameState
 import app.brainbox.domain.repository.Language
 import app.brainbox.domain.usecase.*
+import app.brainbox.utils.PreferencesManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,14 +27,12 @@ class GameViewModel(
     private val getDailyChallengeUseCase: GetDailyChallengeUseCase,
     private val getCurrentDateUseCase: GetCurrentDateUseCase,
     private val validateGuessUseCase: ValidateGuessUseCase,
-    private val calculateScoreUseCase: CalculateScoreUseCase
+    private val calculateScoreUseCase: CalculateScoreUseCase,
+    private val preferencesManager: PreferencesManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
-
-    private val completedGames = mutableSetOf<String>()
-    private val gameResults = mutableMapOf<String, Boolean>()
 
     fun loadDailyChallenge(language: Language, date: String? = null) {
         viewModelScope.launch {
@@ -59,12 +58,16 @@ class GameViewModel(
                         println("   Catégorie: ${category.name}")
                         println("   Items: ${category.items.joinToString(", ")}")
 
+                        // Charger le score total
+                        val totalScore = preferencesManager.getScore(language)
+                        println("📊 Score total chargé pour $language: $totalScore")
+
                         _uiState.update { state ->
                             state.copy(
                                 currentDate = currentDate,
                                 currentCategory = category,
                                 language = language,
-                                gameState = GameState(),
+                                gameState = GameState(score = totalScore),
                                 showDialog = false,
                                 isLoading = false,
                                 error = null
@@ -109,18 +112,20 @@ class GameViewModel(
 
     fun isGameCompleted(language: Language, date: String? = null): Boolean {
         val currentDate = date ?: getCurrentDateUseCase()
-        val gameKey = "${language.name}_$currentDate"
-        val isCompleted = completedGames.contains(gameKey)
-        println("🎯 isGameCompleted($language, $currentDate) = $isCompleted")
-        return isCompleted
+        return preferencesManager.isGameCompleted(language, currentDate)
     }
 
     fun wasGameWon(language: Language, date: String? = null): Boolean {
         val currentDate = date ?: getCurrentDateUseCase()
-        val gameKey = "${language.name}_$currentDate"
-        val wasWon = gameResults[gameKey] ?: false
-        println("🏆 wasGameWon($language, $currentDate) = $wasWon")
-        return wasWon
+        return preferencesManager.wasGameWon(language, currentDate)
+    }
+
+    fun getTotalScore(language: Language): Int {
+        return preferencesManager.getScore(language)
+    }
+
+    fun getAllScores(): Map<Language, Int> {
+        return preferencesManager.getAllScores()
     }
 
     fun onLetterClick(letter: String) {
@@ -161,17 +166,23 @@ class GameViewModel(
 
         if (isCorrect) {
             val scoreToAdd = calculateScoreUseCase(currentState.gameState.lives)
-            val gameKey = "${currentState.language.name}_${currentState.currentDate}"
+            val newTotalScore = currentState.gameState.score + scoreToAdd
 
-            completedGames.add(gameKey)
-            gameResults[gameKey] = true
+            println("🎉 VICTOIRE! Score de la partie: +$scoreToAdd")
+            println("📊 Score total: ${currentState.gameState.score} + $scoreToAdd = $newTotalScore")
 
-            println("🎉 VICTOIRE! Score: +$scoreToAdd")
+            // Sauvegarder le résultat et le score
+            preferencesManager.saveGameResult(
+                language = currentState.language,
+                date = currentState.currentDate,
+                isWin = true,
+                score = scoreToAdd
+            )
 
             _uiState.update { state ->
                 state.copy(
                     gameState = state.gameState.copy(
-                        score = state.gameState.score + scoreToAdd,
+                        score = newTotalScore,
                         isWin = true,
                         isGameOver = true
                     ),
@@ -199,12 +210,15 @@ class GameViewModel(
                     )
                 }
             } else {
-                val gameKey = "${currentState.language.name}_${currentState.currentDate}"
-
-                completedGames.add(gameKey)
-                gameResults[gameKey] = false
-
                 println("💀 GAME OVER! Toutes les vies perdues")
+
+                // Sauvegarder le résultat (défaite, 0 points)
+                preferencesManager.saveGameResult(
+                    language = currentState.language,
+                    date = currentState.currentDate,
+                    isWin = false,
+                    score = 0
+                )
 
                 _uiState.update { state ->
                     state.copy(
@@ -231,9 +245,7 @@ class GameViewModel(
     }
 
     fun resetGame() {
-        println("🔄 Reset Game - Nettoyage complet")
-        completedGames.clear()
-        gameResults.clear()
+        println("🔄 Reset Game - Nettoyage UI uniquement")
         _uiState.update { GameUiState() }
     }
 

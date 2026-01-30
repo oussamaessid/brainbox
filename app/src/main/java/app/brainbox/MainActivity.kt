@@ -49,7 +49,8 @@ class MainActivity : ComponentActivity() {
             getDailyChallengeUseCase = getDailyChallengeUseCase,
             getCurrentDateUseCase = getCurrentDateUseCase,
             validateGuessUseCase = validateGuessUseCase,
-            calculateScoreUseCase = calculateScoreUseCase
+            calculateScoreUseCase = calculateScoreUseCase,
+            preferencesManager = preferencesManager  // 🔥 Ajout du PreferencesManager
         )
 
         adManager.loadAppOpenAd {
@@ -112,6 +113,7 @@ fun BrainBoxApp(
             CompletedGameDialog(
                 language = completedLanguage!!,
                 isWin = viewModel.wasGameWon(completedLanguage!!, null),
+                totalScore = viewModel.getTotalScore(completedLanguage!!),  // 🔥 Ajout du score total
                 onDismiss = {
                     showCompletedDialog = false
                     completedLanguage = null
@@ -135,6 +137,7 @@ fun BrainBoxApp(
 fun CompletedGameDialog(
     language: Language,
     isWin: Boolean,
+    totalScore: Int,  // 🔥 Ajout du paramètre
     onDismiss: () -> Unit
 ) {
     Box(
@@ -209,8 +212,44 @@ fun CompletedGameDialog(
                         fontSize = 16.sp,
                         textAlign = TextAlign.Center,
                         lineHeight = 24.sp,
-                        modifier = Modifier.padding(bottom = 32.dp)
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
+
+                    // 🔥 Afficher le score total
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White.copy(alpha = 0.2f)
+                        ),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "🏆",
+                                fontSize = 24.sp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = getTotalScoreText(language),
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "$totalScore",
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
                         onClick = onDismiss,
@@ -265,6 +304,14 @@ fun getCompletedMessage(language: Language, isWin: Boolean): String {
             "!لقد فزت بهذه اللعبة اليوم بالفعل"
         else
             "!لقد خسرت هذه اللعبة اليوم. عد غداً"
+    }
+}
+
+fun getTotalScoreText(language: Language): String {
+    return when (language) {
+        Language.FRENCH -> "Score total:"
+        Language.ENGLISH -> "Total score:"
+        Language.ARABIC -> ":النقاط الكلية"
     }
 }
 
