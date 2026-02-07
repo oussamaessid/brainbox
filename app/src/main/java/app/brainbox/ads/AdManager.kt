@@ -16,11 +16,11 @@ class AdManager(private val context: Context) {
 
     companion object {
         // IDs de production
-        private const val APP_ID = "ca-app-pub-4161995857939030~6951034960"
-        private const val INTERSTITIAL_AD_ID = "ca-app-pub-4161995857939030/5044665156"
-        private const val APP_OPEN_AD_ID = "ca-app-pub-4161995857939030/9796290779"
-        private const val BANNER_LANGUAGE_ID = "ca-app-pub-4161995857939030/5007397901"
-        private const val BANNER_GAME_ID = "ca-app-pub-4161995857939030/3694316236"
+        private const val APP_ID = "ca-app-pub-2498267529185476~6317964783"
+        private const val INTERSTITIAL_AD_ID = "ca-app-pub-2498267529185476/9773984328"
+        private const val APP_OPEN_AD_ID = "ca-app-pub-2498267529185476/9208578353"
+        private const val BANNER_LANGUAGE_ID = "ca-app-pub-2498267529185476/1672869114"
+        private const val BANNER_GAME_ID = "ca-app-pub-2498267529185476/6953223753"
 
         // IDs de test
         private const val TEST_INTERSTITIAL_AD_ID = "ca-app-pub-3940256099942544/1033173712"
