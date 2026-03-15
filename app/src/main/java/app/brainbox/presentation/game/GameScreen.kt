@@ -114,11 +114,14 @@ fun GameScreen(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(16.dp)
+                        // ✅ FIX : Ajoute le padding de la status bar automatiquement
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp)
                         .offset(x = shakeOffset.value.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     GameHeader(
                         date = uiState.currentDate,
@@ -149,7 +152,7 @@ fun GameScreen(
                         WordsCard(
                             items = category.items,
                             revealedCount = uiState.gameState.revealedCount,
-                            language = language  // 🔥 LIGNE AJOUTÉE POUR LE SUPPORT RTL
+                            language = language
                         )
                     }
 
@@ -312,7 +315,6 @@ fun ErrorScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Retry button
                 Button(
                     onClick = onRetry,
                     modifier = Modifier
@@ -338,7 +340,6 @@ fun ErrorScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Back to menu button
                 OutlinedButton(
                     onClick = onBackToMenu,
                     modifier = Modifier
@@ -360,7 +361,6 @@ fun ErrorScreen(
     }
 }
 
-// Language strings for loading
 fun getLoadingText(language: Language): String {
     return when (language) {
         Language.ENGLISH -> "Loading Game..."
@@ -377,7 +377,6 @@ fun getLoadingSubtext(language: Language): String {
     }
 }
 
-// Language strings for error
 fun getErrorTitle(language: Language): String {
     return when (language) {
         Language.ENGLISH -> "Oops!"

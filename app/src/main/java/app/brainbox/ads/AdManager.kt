@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 class AdManager(private val context: Context) {
 
     companion object {
-        // IDs de production
         private const val APP_ID = "ca-app-pub-2498267529185476~6317964783"
         private const val INTERSTITIAL_AD_ID = "ca-app-pub-2498267529185476/9773984328"
         private const val APP_OPEN_AD_ID = "ca-app-pub-2498267529185476/9208578353"

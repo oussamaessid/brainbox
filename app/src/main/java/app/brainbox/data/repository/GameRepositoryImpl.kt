@@ -96,8 +96,8 @@ class GameRepositoryImpl(context: Context) : GameRepository {
             return emptyMap()
         }
 
-        val todayIndex = daysSinceStart - 1  // Jour 1 = index 0
-        println("🎯 Index calculé      : $todayIndex")
+        val rawIndex   = daysSinceStart - 1
+        val todayIndex = rawIndex % categories.size
 
         if (todayIndex >= 0 && todayIndex < categories.size) {
             val todayStr = dateFormat.format(today.time)

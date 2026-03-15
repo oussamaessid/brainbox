@@ -324,9 +324,9 @@ fun CustomKeyboard(
 ) {
     val rows = when (language) {
         Language.FRENCH -> listOf(
-            listOf("A", "Z", "E", "R", "T", "Y", "U", "I", "O", "P"),
-            listOf("Q", "S", "D", "F", "G", "H", "J", "K", "L", "M"),
-            listOf("W", "X", "C", "V", "B", "N")
+            listOf("A","Z","E","R","T","Y","U","I","O","P"),
+            listOf("Q","S","D","F","G","H","J","K","L","M"),
+            listOf("W","X","C","V","B","N","É","È","À","Ç"),
         )
         Language.ENGLISH -> listOf(
             listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
@@ -334,9 +334,9 @@ fun CustomKeyboard(
             listOf("Z", "X", "C", "V", "B", "N", "M")
         )
         Language.ARABIC -> listOf(
-            listOf("ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح"),
-            listOf("ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م"),
-            listOf("ظ", "ط", "ذ", "د", "ز", "ر", "و")
+            listOf("ض","ص","ث","ق","ف","غ","ع","ه","خ","ح"),
+            listOf("ش","س","ي","ب","ل","ا","ت","ن","م","ك"),
+            listOf("ظ","ط","ذ","د","ز","ر","و","أ","ة","ى")
         )
     }
 
