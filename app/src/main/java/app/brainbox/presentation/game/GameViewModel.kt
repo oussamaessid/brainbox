@@ -161,7 +161,10 @@ class GameViewModel(
         if (guess.isBlank()) return
 
         println("🔍 Validation: '$guess' vs '${currentCategory.name}'")
-        val isCorrect = validateGuessUseCase(guess, currentCategory.name)
+        val isCorrect = validateGuessUseCase(
+            guess.trim(),
+            currentCategory.name.trim()
+        )
         println("   Résultat: ${if (isCorrect) "✅ Correct" else "❌ Incorrect"}")
 
         if (isCorrect) {
@@ -212,7 +215,6 @@ class GameViewModel(
             } else {
                 println("💀 GAME OVER! Toutes les vies perdues")
 
-                // Sauvegarder le résultat (défaite, 0 points)
                 preferencesManager.saveGameResult(
                     language = currentState.language,
                     date = currentState.currentDate,

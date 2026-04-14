@@ -87,11 +87,9 @@ fun GameScreen(
                 )
         )
 
-        // Loading indicator
         if (uiState.isLoading) {
             LoadingScreen(language = language)
         }
-        // Error screen
         else if (uiState.error != null) {
             ErrorScreen(
                 error = uiState.error!!,
@@ -106,7 +104,6 @@ fun GameScreen(
                 }
             )
         }
-        // Game content
         else {
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -114,7 +111,6 @@ fun GameScreen(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        // ✅ FIX : Ajoute le padding de la status bar automatiquement
                         .statusBarsPadding()
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 16.dp)

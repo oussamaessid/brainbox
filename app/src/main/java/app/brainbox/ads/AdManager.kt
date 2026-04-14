@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 class AdManager(private val context: Context) {
 
     companion object {
-        private const val APP_ID = "ca-app-pub-2498267529185476~6317964783"
         private const val INTERSTITIAL_AD_ID = "ca-app-pub-2498267529185476/9773984328"
         private const val APP_OPEN_AD_ID = "ca-app-pub-2498267529185476/9208578353"
         private const val BANNER_LANGUAGE_ID = "ca-app-pub-2498267529185476/1672869114"
@@ -38,12 +37,10 @@ class AdManager(private val context: Context) {
     private val interstitialInterval = 5 * 60 * 1000L // 5 minutes en millisecondes
 
     init {
-        // Initialiser Mobile Ads SDK
         MobileAds.initialize(context) {
             Log.d(TAG, "AdMob SDK initialized")
         }
 
-        // Ajouter ID de test device si nécessaire
         if (USE_TEST_ADS) {
             val testDeviceIds = listOf(
                 AdRequest.DEVICE_ID_EMULATOR,
@@ -63,7 +60,6 @@ class AdManager(private val context: Context) {
         startInterstitialTimer()
     }
 
-    // === ANNONCE À L'OUVERTURE (APP OPEN AD) ===
     fun loadAppOpenAd(onAdLoaded: () -> Unit = {}) {
         val adRequest = AdRequest.Builder().build()
         val adId = if (USE_TEST_ADS) TEST_APP_OPEN_AD_ID else APP_OPEN_AD_ID
