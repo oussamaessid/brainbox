@@ -47,18 +47,13 @@ class GameViewModel(
                 val currentDate = date ?: getCurrentDateUseCase()
                 println("📅 Date utilisée: $currentDate")
 
-                // getDailyChallengeUseCase est maintenant suspend
                 val challenge = getDailyChallengeUseCase(language, currentDate)
 
                 if (challenge != null) {
                     val category = challenge.categories.firstOrNull()
+                        ?.let { it.copy(name = it.name.replace(Regex("_\\d+$"), "")) }
 
                     if (category != null) {
-                        println("✅ Challenge trouvé!")
-                        println("   Catégorie: ${category.name}")
-                        println("   Items: ${category.items.joinToString(", ")}")
-
-                        // Charger le score total
                         val totalScore = preferencesManager.getScore(language)
                         println("📊 Score total chargé pour $language: $totalScore")
 
@@ -160,7 +155,6 @@ class GameViewModel(
 
         if (guess.isBlank()) return
 
-        println("🔍 Validation: '$guess' vs '${currentCategory.name}'")
         val isCorrect = validateGuessUseCase(
             guess.trim(),
             currentCategory.name.trim()
