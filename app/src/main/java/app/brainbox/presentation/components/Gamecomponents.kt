@@ -105,7 +105,7 @@ fun GameHeader(
 fun WordsCard(
     items: List<String>,
     revealedCount: Int,
-    language: Language = Language.ENGLISH  // 🔥 Ajout du paramètre language
+    language: Language = Language.ENGLISH
 ) {
     Card(
         modifier = Modifier
@@ -145,7 +145,6 @@ fun AnimatedWordCard(
     isRevealed: Boolean,
     language: Language = Language.ENGLISH  // 🔥 Ajout du paramètre language
 ) {
-    // 🔥 Détecter si c'est de l'arabe
     val isArabic = language == Language.ARABIC
 
     AnimatedVisibility(
@@ -177,9 +176,7 @@ fun AnimatedWordCard(
                 else
                     Arrangement.Start
             ) {
-                // 🔥 IMPORTANT: Inverser l'ordre pour l'arabe
                 if (isArabic) {
-                    // ARABE: Texte d'abord (à droite), puis point (à gauche)
                     Text(
                         text = word,
                         fontSize = 16.sp,

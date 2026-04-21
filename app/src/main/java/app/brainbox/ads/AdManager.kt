@@ -28,7 +28,7 @@ class AdManager(private val context: Context) {
         private const val TAG = "AdManager"
 
         // Mode test/production
-        private const val USE_TEST_ADS = true // Changez à false pour production
+        private const val USE_TEST_ADS = false // Changez à false pour production
     }
 
     private var interstitialAd: InterstitialAd? = null

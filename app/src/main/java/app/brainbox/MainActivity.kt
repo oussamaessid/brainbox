@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
             getCurrentDateUseCase = getCurrentDateUseCase,
             validateGuessUseCase = validateGuessUseCase,
             calculateScoreUseCase = calculateScoreUseCase,
-            preferencesManager = preferencesManager  // 🔥 Ajout du PreferencesManager
+            preferencesManager = preferencesManager
         )
 
         adManager.loadAppOpenAd {
@@ -82,8 +82,6 @@ fun BrainBoxApp(
     val isFirstLaunch = remember { preferencesManager.isFirstLaunch() }
     var showTutorial by remember { mutableStateOf(isFirstLaunch) }
 
-    val uiState by viewModel.uiState.collectAsState()
-
     if (showTutorial) {
         TutorialDialog(
             language = Language.ENGLISH,
@@ -104,6 +102,10 @@ fun BrainBoxApp(
                     completedLanguage = language
                     showCompletedDialog = true
                 } else {
+                    // FIX: Précharger le challenge AVANT de naviguer vers GameScreen.
+                    // Ainsi quand GameScreen apparaît, isLoading=true et currentCategory=null
+                    // dès le début → le LoadingScreen s'affiche immédiatement, sans flash.
+                    viewModel.loadDailyChallenge(language, null)
                     selectedLanguage = language
                 }
             }
@@ -113,7 +115,7 @@ fun BrainBoxApp(
             CompletedGameDialog(
                 language = completedLanguage!!,
                 isWin = viewModel.wasGameWon(completedLanguage!!, null),
-                totalScore = viewModel.getTotalScore(completedLanguage!!),  // 🔥 Ajout du score total
+                totalScore = viewModel.getTotalScore(completedLanguage!!),
                 onDismiss = {
                     showCompletedDialog = false
                     completedLanguage = null
@@ -137,7 +139,7 @@ fun BrainBoxApp(
 fun CompletedGameDialog(
     language: Language,
     isWin: Boolean,
-    totalScore: Int,  // 🔥 Ajout du paramètre
+    totalScore: Int,
     onDismiss: () -> Unit
 ) {
     Box(
@@ -215,7 +217,6 @@ fun CompletedGameDialog(
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    // 🔥 Afficher le score total
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
@@ -228,10 +229,7 @@ fun CompletedGameDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            Text(
-                                text = "🏆",
-                                fontSize = 24.sp
-                            )
+                            Text(text = "🏆", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = getTotalScoreText(language),

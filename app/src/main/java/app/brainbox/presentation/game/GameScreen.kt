@@ -30,15 +30,22 @@ fun GameScreen(
     onBackToMenu: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val scope = rememberCoroutineScope()
     val bannerAd = remember { adManager.createBannerAdView(isLanguageScreen = false) }
 
     val shakeOffset = remember { Animatable(0f) }
     val pulseScale = remember { Animatable(1f) }
 
     LaunchedEffect(language, date) {
-        println("🎬 GameScreen LaunchedEffect - Chargement du challenge")
-        viewModel.loadDailyChallenge(language, date)
+        val currentState = viewModel.uiState.value
+        val alreadyLoadingOrLoaded = currentState.isLoading
+                || (currentState.currentCategory != null && currentState.language == language)
+
+        if (!alreadyLoadingOrLoaded) {
+            println("🎬 GameScreen fallback - Chargement (langue=$language, date=$date)")
+            viewModel.loadDailyChallenge(language, date)
+        } else {
+            println("⏭️ GameScreen - Chargement déjà en cours ou données prêtes, skip")
+        }
     }
 
     LaunchedEffect(uiState.gameState.isGameOver) {
@@ -87,99 +94,98 @@ fun GameScreen(
                 )
         )
 
-        if (uiState.isLoading) {
-            LoadingScreen(language = language)
-        }
-        else if (uiState.error != null) {
-            ErrorScreen(
-                error = uiState.error!!,
-                language = language,
-                onRetry = {
-                    println("🔄 Retry button clicked")
-                    viewModel.loadDailyChallenge(language, date)
-                },
-                onBackToMenu = {
-                    println("🔙 Back to menu button clicked")
-                    onBackToMenu()
-                }
-            )
-        }
-        else {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 16.dp)
-                        .offset(x = shakeOffset.value.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(modifier = Modifier.height(12.dp))
+        when {
+            // Loading : affiché dès l'ouverture car isLoading=true avant même le premier frame
+            uiState.isLoading && uiState.currentCategory == null -> {
+                LoadingScreen(language = language)
+            }
 
-                    GameHeader(
-                        date = uiState.currentDate,
-                        score = uiState.gameState.score,
-                        onBackClick = onBackToMenu
-                    )
+            uiState.error != null -> {
+                ErrorScreen(
+                    error = uiState.error!!,
+                    language = language,
+                    onRetry = {
+                        viewModel.loadDailyChallenge(language, date)
+                    },
+                    onBackToMenu = onBackToMenu
+                )
+            }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+            else -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp)
+                            .offset(x = shakeOffset.value.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(
-                        text = "✨ BRAINBOX ✨",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                    )
+                        GameHeader(
+                            date = uiState.currentDate,
+                            score = uiState.gameState.score,
+                            onBackClick = onBackToMenu
+                        )
 
-                    Text(
-                        text = getSubtitle(language),
-                        fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Medium
-                    )
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "✨ BRAINBOX ✨",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                        )
 
-                    uiState.currentCategory?.let { category ->
-                        WordsCard(
-                            items = category.items,
-                            revealedCount = uiState.gameState.revealedCount,
+                        Text(
+                            text = getSubtitle(language),
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        uiState.currentCategory?.let { category ->
+                            WordsCard(
+                                items = category.items,
+                                revealedCount = uiState.gameState.revealedCount,
+                                language = language
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        AnswerInput(
+                            userGuess = uiState.gameState.userGuess,
+                            lives = uiState.gameState.lives,
                             language = language
                         )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        CustomKeyboard(
+                            language = language,
+                            onLetterClick = { viewModel.onLetterClick(it) },
+                            onBackspace = { viewModel.onBackspace() },
+                            onValidate = { viewModel.onValidateGuess() },
+                            validateText = getValidateText(language),
+                            isValidateEnabled = uiState.gameState.userGuess.isNotEmpty()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
 
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    AnswerInput(
-                        userGuess = uiState.gameState.userGuess,
-                        lives = uiState.gameState.lives,
-                        language = language
-                    )
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    CustomKeyboard(
-                        language = language,
-                        onLetterClick = { viewModel.onLetterClick(it) },
-                        onBackspace = { viewModel.onBackspace() },
-                        onValidate = { viewModel.onValidateGuess() },
-                        validateText = getValidateText(language),
-                        isValidateEnabled = uiState.gameState.userGuess.isNotEmpty()
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    BannerAdView(bannerAd)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        BannerAdView(bannerAd)
+                    }
                 }
             }
         }
@@ -192,7 +198,6 @@ fun GameScreen(
                     score = if (uiState.gameState.isWin) uiState.gameState.lives * 20 else 0,
                     language = language,
                     onPlayAgain = {
-                        println("🎮 Play Again clicked - Retour au menu")
                         viewModel.resetGame()
                         onBackToMenu()
                     }
@@ -230,9 +235,7 @@ fun LoadingScreen(language: Language) {
                     color = Color(0xFF667eea),
                     strokeWidth = 6.dp
                 )
-
                 Spacer(modifier = Modifier.height(24.dp))
-
                 Text(
                     text = getLoadingText(language),
                     fontSize = 18.sp,
@@ -240,9 +243,7 @@ fun LoadingScreen(language: Language) {
                     color = Color(0xFF2E1A47),
                     textAlign = TextAlign.Center
                 )
-
                 Spacer(modifier = Modifier.height(8.dp))
-
                 Text(
                     text = getLoadingSubtext(language),
                     fontSize = 14.sp,
@@ -288,9 +289,7 @@ fun ErrorScreen(
                     modifier = Modifier.size(64.dp),
                     tint = Color(0xFFE91E63)
                 )
-
                 Spacer(modifier = Modifier.height(24.dp))
-
                 Text(
                     text = getErrorTitle(language),
                     fontSize = 24.sp,
@@ -298,9 +297,7 @@ fun ErrorScreen(
                     color = Color(0xFF2E1A47),
                     textAlign = TextAlign.Center
                 )
-
                 Spacer(modifier = Modifier.height(16.dp))
-
                 Text(
                     text = error,
                     fontSize = 16.sp,
@@ -308,18 +305,12 @@ fun ErrorScreen(
                     textAlign = TextAlign.Center,
                     lineHeight = 24.sp
                 )
-
                 Spacer(modifier = Modifier.height(24.dp))
-
                 Button(
                     onClick = onRetry,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF667eea)
-                    )
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF667eea))
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
@@ -333,18 +324,12 @@ fun ErrorScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
-
                 Spacer(modifier = Modifier.height(12.dp))
-
                 OutlinedButton(
                     onClick = onBackToMenu,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color(0xFF667eea)
-                    )
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF667eea))
                 ) {
                     Text(
                         text = getBackToMenuText(language),
@@ -357,58 +342,44 @@ fun ErrorScreen(
     }
 }
 
-fun getLoadingText(language: Language): String {
-    return when (language) {
-        Language.ENGLISH -> "Loading Game..."
-        Language.FRENCH -> "Chargement du jeu..."
-        Language.ARABIC -> "...تحميل اللعبة"
-    }
+fun getLoadingText(language: Language): String = when (language) {
+    Language.ENGLISH -> "Loading Game..."
+    Language.FRENCH -> "Chargement du jeu..."
+    Language.ARABIC -> "...تحميل اللعبة"
 }
 
-fun getLoadingSubtext(language: Language): String {
-    return when (language) {
-        Language.ENGLISH -> "Fetching today's puzzle"
-        Language.FRENCH -> "Récupération du puzzle du jour"
-        Language.ARABIC -> "جلب لغز اليوم"
-    }
+fun getLoadingSubtext(language: Language): String = when (language) {
+    Language.ENGLISH -> "Fetching today's puzzle"
+    Language.FRENCH -> "Récupération du puzzle du jour"
+    Language.ARABIC -> "جلب لغز اليوم"
 }
 
-fun getErrorTitle(language: Language): String {
-    return when (language) {
-        Language.ENGLISH -> "Oops!"
-        Language.FRENCH -> "Oups !"
-        Language.ARABIC -> "عذراً!"
-    }
+fun getErrorTitle(language: Language): String = when (language) {
+    Language.ENGLISH -> "Oops!"
+    Language.FRENCH -> "Oups !"
+    Language.ARABIC -> "عذراً!"
 }
 
-fun getRetryText(language: Language): String {
-    return when (language) {
-        Language.ENGLISH -> "Retry"
-        Language.FRENCH -> "Réessayer"
-        Language.ARABIC -> "إعادة المحاولة"
-    }
+fun getRetryText(language: Language): String = when (language) {
+    Language.ENGLISH -> "Retry"
+    Language.FRENCH -> "Réessayer"
+    Language.ARABIC -> "إعادة المحاولة"
 }
 
-fun getBackToMenuText(language: Language): String {
-    return when (language) {
-        Language.ENGLISH -> "Back to Menu"
-        Language.FRENCH -> "Retour au menu"
-        Language.ARABIC -> "العودة للقائمة"
-    }
+fun getBackToMenuText(language: Language): String = when (language) {
+    Language.ENGLISH -> "Back to Menu"
+    Language.FRENCH -> "Retour au menu"
+    Language.ARABIC -> "العودة للقائمة"
 }
 
-fun getSubtitle(language: Language): String {
-    return when (language) {
-        Language.FRENCH -> "Devinez la catégorie commune !"
-        Language.ENGLISH -> "Guess the common category!"
-        Language.ARABIC -> "خمن الفئة المشتركة!"
-    }
+fun getSubtitle(language: Language): String = when (language) {
+    Language.FRENCH -> "Devinez la catégorie commune !"
+    Language.ENGLISH -> "Guess the common category!"
+    Language.ARABIC -> "خمن الفئة المشتركة!"
 }
 
-fun getValidateText(language: Language): String {
-    return when (language) {
-        Language.FRENCH -> "VALIDER"
-        Language.ENGLISH -> "VALIDATE"
-        Language.ARABIC -> "تأكيد"
-    }
+fun getValidateText(language: Language): String = when (language) {
+    Language.FRENCH -> "VALIDER"
+    Language.ENGLISH -> "VALIDATE"
+    Language.ARABIC -> "تأكيد"
 }

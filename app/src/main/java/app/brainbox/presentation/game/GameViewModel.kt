@@ -34,6 +34,7 @@ class GameViewModel(
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
+
     fun loadDailyChallenge(language: Language, date: String? = null) {
         viewModelScope.launch {
             try {
@@ -42,7 +43,17 @@ class GameViewModel(
                 println("   Langue: $language")
                 println("   Date demandée: ${date ?: "aujourd'hui"}")
 
-                _uiState.update { it.copy(isLoading = true, error = null) }
+                val isLanguageChange = _uiState.value.language != language
+
+                // FIX: Si changement de langue → vider currentCategory immédiatement
+                // pour éviter le flash de l'ancien contenu avant le loading
+                _uiState.update {
+                    it.copy(
+                        isLoading = true,
+                        error = null,
+                        currentCategory = if (isLanguageChange) null else it.currentCategory
+                    )
+                }
 
                 val currentDate = date ?: getCurrentDateUseCase()
                 println("📅 Date utilisée: $currentDate")
@@ -57,12 +68,27 @@ class GameViewModel(
                         val totalScore = preferencesManager.getScore(language)
                         println("📊 Score total chargé pour $language: $totalScore")
 
+                        val savedState = preferencesManager.getSavedGameState(language, currentDate)
+
+                        val restoredGameState = if (savedState != null) {
+                            println("♻️ Restauration de l'état: lives=${savedState.lives}, revealed=${savedState.revealedCount}, guess='${savedState.userGuess}'")
+                            GameState(
+                                score = totalScore,
+                                lives = savedState.lives,
+                                revealedCount = savedState.revealedCount,
+                                userGuess = savedState.userGuess
+                            )
+                        } else {
+                            println("🆕 Nouvelle partie (aucun état sauvegardé)")
+                            GameState(score = totalScore)
+                        }
+
                         _uiState.update { state ->
                             state.copy(
                                 currentDate = currentDate,
                                 currentCategory = category,
                                 language = language,
-                                gameState = GameState(score = totalScore),
+                                gameState = restoredGameState,
                                 showDialog = false,
                                 isLoading = false,
                                 error = null
@@ -105,6 +131,8 @@ class GameViewModel(
         }
     }
 
+    // ==================== HELPERS PUBLICS ====================
+
     fun isGameCompleted(language: Language, date: String? = null): Boolean {
         val currentDate = date ?: getCurrentDateUseCase()
         return preferencesManager.isGameCompleted(language, currentDate)
@@ -123,6 +151,8 @@ class GameViewModel(
         return preferencesManager.getAllScores()
     }
 
+    // ==================== ACTIONS CLAVIER ====================
+
     fun onLetterClick(letter: String) {
         _uiState.update { state ->
             state.copy(
@@ -131,6 +161,7 @@ class GameViewModel(
                 )
             )
         }
+        saveCurrentState()
     }
 
     fun onBackspace() {
@@ -146,7 +177,10 @@ class GameViewModel(
                 state
             }
         }
+        saveCurrentState()
     }
+
+    // ==================== VALIDATION ====================
 
     fun onValidateGuess() {
         val currentState = _uiState.value
@@ -159,7 +193,7 @@ class GameViewModel(
             guess.trim(),
             currentCategory.name.trim()
         )
-        println("   Résultat: ${if (isCorrect) "✅ Correct" else "❌ Incorrect"}")
+        println("🔍 Résultat validation: ${if (isCorrect) "✅ Correct" else "❌ Incorrect"}")
 
         if (isCorrect) {
             val scoreToAdd = calculateScoreUseCase(currentState.gameState.lives)
@@ -168,12 +202,16 @@ class GameViewModel(
             println("🎉 VICTOIRE! Score de la partie: +$scoreToAdd")
             println("📊 Score total: ${currentState.gameState.score} + $scoreToAdd = $newTotalScore")
 
-            // Sauvegarder le résultat et le score
             preferencesManager.saveGameResult(
                 language = currentState.language,
                 date = currentState.currentDate,
                 isWin = true,
                 score = scoreToAdd
+            )
+
+            preferencesManager.clearCurrentGameState(
+                language = currentState.language,
+                date = currentState.currentDate
             )
 
             _uiState.update { state ->
@@ -186,6 +224,7 @@ class GameViewModel(
                     showDialog = true
                 )
             }
+
         } else {
             val newLives = currentState.gameState.lives - 1
             val newRevealedCount = minOf(
@@ -206,6 +245,8 @@ class GameViewModel(
                         )
                     )
                 }
+                saveCurrentState()
+
             } else {
                 println("💀 GAME OVER! Toutes les vies perdues")
 
@@ -214,6 +255,11 @@ class GameViewModel(
                     date = currentState.currentDate,
                     isWin = false,
                     score = 0
+                )
+
+                preferencesManager.clearCurrentGameState(
+                    language = currentState.language,
+                    date = currentState.currentDate
                 )
 
                 _uiState.update { state ->
@@ -231,6 +277,8 @@ class GameViewModel(
         }
     }
 
+    // ==================== AUTRES ACTIONS ====================
+
     fun onPlayAgain() {
         println("🔄 Play Again - Rechargement du challenge")
         loadDailyChallenge(_uiState.value.language, _uiState.value.currentDate)
@@ -241,15 +289,34 @@ class GameViewModel(
     }
 
     fun resetGame() {
-        println("🔄 Reset Game - Nettoyage UI uniquement")
-        _uiState.update { GameUiState() }
+        println("🔄 Reset Game - Fermeture dialog uniquement, données conservées")
+        _uiState.update { current ->
+            current.copy(
+                showDialog = false,
+                gameState = GameState(score = current.gameState.score)
+            )
+        }
     }
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
 
-    // Messages d'erreur selon la langue
+    // ==================== SAUVEGARDE DE L'ÉTAT EN COURS ====================
+
+    private fun saveCurrentState() {
+        val state = _uiState.value
+        if (!state.gameState.isGameOver && state.currentDate.isNotEmpty()) {
+            preferencesManager.saveCurrentGameState(
+                language = state.language,
+                date = state.currentDate,
+                lives = state.gameState.lives,
+                revealedCount = state.gameState.revealedCount,
+                userGuess = state.gameState.userGuess
+            )
+        }
+    }
+
     private fun getNoChallengeError(language: Language, date: String): String {
         return when (language) {
             Language.ENGLISH -> "No challenge available for $date. The game may not have started yet."

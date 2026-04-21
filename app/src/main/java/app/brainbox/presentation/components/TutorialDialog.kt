@@ -391,7 +391,6 @@ private fun getExampleAnswer1(): String {
     return "Words that come before \"box\""
 }
 
-// Example 2 - Always French
 private fun getExampleClues2(): List<String> {
     return listOf("Violon", "Guitare", "Cerf-volant", "Raquette de tennis", "Marionnette")
 }
@@ -400,7 +399,6 @@ private fun getExampleAnswer2(): String {
     return "Choses avec des cordes"
 }
 
-// Example 3 - Always Arabic
 private fun getExampleClues3(): List<String> {
     return listOf("قلي", "طبخ بطيء", "سلق", "خفق", "سلق صلب")
 }
