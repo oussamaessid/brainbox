@@ -19,7 +19,7 @@
 
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-2498267529185476~6317964783"/>
+            android:value="ca-app-pub-9651830078758870~5341560853"/>
 
         <activity
             android:name="app.brainbox.MainActivity"
