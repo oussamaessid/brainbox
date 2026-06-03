@@ -3,7 +3,9 @@ package app.brainbox.presentation.game
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
@@ -13,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,6 +37,9 @@ fun GameScreen(
 
     val shakeOffset = remember { Animatable(0f) }
     val pulseScale = remember { Animatable(1f) }
+
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
 
     LaunchedEffect(language, date) {
         val currentState = viewModel.uiState.value
@@ -95,7 +101,7 @@ fun GameScreen(
         )
 
         when {
-            // Loading : affiché dès l'ouverture car isLoading=true avant même le premier frame
+            // Loading
             uiState.isLoading && uiState.currentCategory == null -> {
                 LoadingScreen(language = language)
             }
@@ -112,17 +118,24 @@ fun GameScreen(
             }
 
             else -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                ) {
+                    // ──────────────────────────────────
+                    // CONTENU SCROLLABLE (header + grille + input)
+                    // ──────────────────────────────────
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .statusBarsPadding()
+                            .fillMaxWidth()
                             .padding(horizontal = 16.dp)
-                            .padding(bottom = 16.dp)
+                            .verticalScroll(rememberScrollState())
                             .offset(x = shakeOffset.value.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         GameHeader(
                             date = uiState.currentDate,
@@ -130,24 +143,32 @@ fun GameScreen(
                             onBackClick = onBackToMenu
                         )
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
 
                         Text(
                             text = "✨ BRAINBOX ✨",
-                            fontSize = 28.sp,
+                            fontSize = when {
+                                screenHeight < 600.dp -> 24.sp
+                                screenHeight < 700.dp -> 26.sp
+                                else -> 28.sp
+                            },
                             fontWeight = FontWeight.Black,
                             color = Color.White,
                         )
 
                         Text(
                             text = getSubtitle(language),
-                            fontSize = 13.sp,
+                            fontSize = when {
+                                screenHeight < 600.dp -> 11.sp
+                                screenHeight < 700.dp -> 12.sp
+                                else -> 13.sp
+                            },
                             color = Color.White.copy(alpha = 0.8f),
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Medium
                         )
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         uiState.currentCategory?.let { category ->
                             WordsCard(
@@ -157,7 +178,7 @@ fun GameScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.weight(1f))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         AnswerInput(
                             userGuess = uiState.gameState.userGuess,
@@ -165,8 +186,19 @@ fun GameScreen(
                             language = language
                         )
 
-                        Spacer(modifier = Modifier.weight(1f))
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
 
+                    // ──────────────────────────────────
+                    // CLAVIER FIXE (toujours visible)
+                    // ──────────────────────────────────
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         CustomKeyboard(
                             language = language,
                             onLetterClick = { viewModel.onLetterClick(it) },
@@ -176,13 +208,17 @@ fun GameScreen(
                             isValidateEnabled = uiState.gameState.userGuess.isNotEmpty()
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                     }
 
+                    // ──────────────────────────────────
+                    // BANNER AD FIXE (en bas)
+                    // ──────────────────────────────────
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
+                            .navigationBarsPadding()
                     ) {
                         BannerAdView(bannerAd)
                     }
@@ -308,7 +344,9 @@ fun ErrorScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = onRetry,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF667eea))
                 ) {
@@ -327,7 +365,9 @@ fun ErrorScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = onBackToMenu,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF667eea))
                 ) {
