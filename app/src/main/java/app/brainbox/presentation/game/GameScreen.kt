@@ -1,5 +1,6 @@
 package app.brainbox.presentation.game
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -41,6 +42,9 @@ fun GameScreen(
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
 
+    // ✅ NOUVEAU - Dialog de confirmation avant de quitter
+    var showExitConfirmDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(language, date) {
         val currentState = viewModel.uiState.value
         val alreadyLoadingOrLoaded = currentState.isLoading
@@ -70,6 +74,77 @@ fun GameScreen(
                 shakeOffset.animateTo(0f, animationSpec = tween(40))
             }
         }
+    }
+
+    // ✅ BackHandler - Bouton retour système
+    BackHandler(enabled = true) {
+        // Si le jeu n'est pas fini, afficher une confirmation
+        if (!uiState.gameState.isGameOver && !uiState.showDialog) {
+            showExitConfirmDialog = true
+        } else {
+            // Sinon, retourner directement à l'accueil
+            onBackToMenu()
+        }
+    }
+
+    // ✅ Dialog de confirmation
+    if (showExitConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirmDialog = false },
+            title = {
+                Text(
+                    text = getExitConfirmTitle(language),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = Color(0xFF2E1A47)
+                )
+            },
+            text = {
+                Text(
+                    text = getExitConfirmMessage(language),
+                    fontSize = 16.sp,
+                    color = Color(0xFF64748B),
+                    lineHeight = 24.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showExitConfirmDialog = false
+                        onBackToMenu()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE91E63)
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.height(44.dp)
+                ) {
+                    Text(
+                        text = getExitConfirmYes(language),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 14.sp
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showExitConfirmDialog = false },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.height(44.dp)
+                ) {
+                    Text(
+                        text = getExitConfirmNo(language),
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF667eea),
+                        fontSize = 14.sp
+                    )
+                }
+            },
+            modifier = Modifier.padding(16.dp),
+            shape = RoundedCornerShape(20.dp),
+            containerColor = Color.White
+        )
     }
 
     Box(
@@ -137,10 +212,18 @@ fun GameScreen(
                     ) {
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // ✅ GameHeader avec bouton retour
                         GameHeader(
                             date = uiState.currentDate,
                             score = uiState.gameState.score,
-                            onBackClick = onBackToMenu
+                            onBackClick = {
+                                // Si le jeu n'est pas fini, demander confirmation
+                                if (!uiState.gameState.isGameOver && !uiState.showDialog) {
+                                    showExitConfirmDialog = true
+                                } else {
+                                    onBackToMenu()
+                                }
+                            }
                         )
 
                         Spacer(modifier = Modifier.height(2.dp))
@@ -380,6 +463,31 @@ fun ErrorScreen(
             }
         }
     }
+}
+
+// ✅ NOUVELLES FONCTIONS DE TEXTE
+fun getExitConfirmTitle(language: Language): String = when (language) {
+    Language.ENGLISH -> "Exit Game?"
+    Language.FRENCH -> "Quitter le jeu?"
+    Language.ARABIC -> "هل تريد الخروج من اللعبة؟"
+}
+
+fun getExitConfirmMessage(language: Language): String = when (language) {
+    Language.ENGLISH -> "Your progress will be lost if you exit now. Are you sure?"
+    Language.FRENCH -> "Votre progression sera perdue si vous quittez maintenant. Êtes-vous sûr?"
+    Language.ARABIC -> "سيتم فقدان تقدمك إذا خرجت الآن. هل أنت متأكد؟"
+}
+
+fun getExitConfirmYes(language: Language): String = when (language) {
+    Language.ENGLISH -> "Yes, Exit"
+    Language.FRENCH -> "Oui, quitter"
+    Language.ARABIC -> "نعم، اخرج"
+}
+
+fun getExitConfirmNo(language: Language): String = when (language) {
+    Language.ENGLISH -> "No, Stay"
+    Language.FRENCH -> "Non, rester"
+    Language.ARABIC -> "لا، ابق"
 }
 
 fun getLoadingText(language: Language): String = when (language) {
