@@ -18,7 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -143,7 +143,7 @@ fun AnimatedWordCard(
     word: String,
     index: Int,
     isRevealed: Boolean,
-    language: Language = Language.ENGLISH  // 🔥 Ajout du paramètre language
+    language: Language = Language.ENGLISH
 ) {
     val isArabic = language == Language.ARABIC
 
@@ -319,6 +319,42 @@ fun CustomKeyboard(
     validateText: String,
     isValidateEnabled: Boolean
 ) {
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+
+    // ✅ HAUTEUR DES BOUTONS ADAPTATIVE
+    val buttonHeight = when {
+        screenHeight < 600.dp -> 32.dp
+        screenHeight < 700.dp -> 36.dp
+        else -> 40.dp
+    }
+
+    // ✅ PADDING ET SPACING ADAPTATIF
+    val horizontalPadding = when {
+        screenHeight < 600.dp -> 2.dp
+        screenHeight < 700.dp -> 3.dp
+        else -> 4.dp
+    }
+
+    val verticalSpacing = when {
+        screenHeight < 600.dp -> 2.dp
+        screenHeight < 700.dp -> 3.dp
+        else -> 5.dp
+    }
+
+    // ✅ TAILLE DES TEXTES ADAPTATIVE
+    val buttonTextSize = when {
+        screenHeight < 600.dp -> 10.sp
+        screenHeight < 700.dp -> 11.sp
+        else -> 12.sp
+    }
+
+    val validateTextSize = when {
+        screenHeight < 600.dp -> 11.sp
+        screenHeight < 700.dp -> 12.sp
+        else -> 14.sp
+    }
+
     val rows = when (language) {
         Language.FRENCH -> listOf(
             listOf("A","Z","E","R","T","Y","U","I","O","P"),
@@ -339,51 +375,62 @@ fun CustomKeyboard(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(5.dp)
+        verticalArrangement = Arrangement.spacedBy(verticalSpacing)
     ) {
         rows.forEach { row ->
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(horizontalPadding),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 row.forEach { letter ->
                     KeyButton(
                         text = letter,
-                        onClick = { onLetterClick(letter) }
+                        onClick = { onLetterClick(letter) },
+                        height = buttonHeight,
+                        textSize = buttonTextSize,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
         }
 
+        // ✅ DERNIÈRE LIGNE AVEC BACKSPACE ET VALIDATE
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(horizontalPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // BACKSPACE
             SpecialKeyButton(
                 text = "⌫",
                 onClick = onBackspace,
-                color = Color(0xFFFF6B6B)
+                color = Color(0xFFFF6B6B),
+                height = buttonHeight,
+                textSize = buttonTextSize,
+                modifier = Modifier.weight(1f)
             )
 
-            Button(
-                onClick = onValidate,
-                enabled = isValidateEnabled,
+            // VALIDATE
+            Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
-                    .padding(horizontal = 4.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4CAF50),
-                    disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
-                )
+                    .weight(2f)
+                    .height(buttonHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (isValidateEnabled) Color(0xFF4CAF50) else Color.Gray.copy(alpha = 0.3f)
+                    )
+                    .clickable(enabled = isValidateEnabled, onClick = onValidate),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     "✓ $validateText",
                     fontWeight = FontWeight.Black,
-                    fontSize = 14.sp,
+                    fontSize = validateTextSize,
                     color = if (isValidateEnabled) Color.White else Color.White.copy(alpha = 0.5f)
                 )
             }
@@ -391,6 +438,60 @@ fun CustomKeyboard(
     }
 }
 
+// ✅ KEY BUTTON RESPONSIVE
+@Composable
+private fun KeyButton(
+    text: String,
+    onClick: () -> Unit,
+    height: androidx.compose.ui.unit.Dp,
+    textSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(height)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFFE0E0E0))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontWeight = FontWeight.Bold,
+            fontSize = textSize,
+            color = Color.Black,
+            maxLines = 1
+        )
+    }
+}
+
+// ✅ SPECIAL KEY BUTTON RESPONSIVE (BACKSPACE)
+@Composable
+private fun SpecialKeyButton(
+    text: String,
+    onClick: () -> Unit,
+    color: Color,
+    height: androidx.compose.ui.unit.Dp,
+    textSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(height)
+            .clip(RoundedCornerShape(6.dp))
+            .background(color)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontWeight = FontWeight.Bold,
+            fontSize = textSize,
+            color = Color.White,
+            maxLines = 1
+        )
+    }
+}
 @Composable
 fun RowScope.KeyButton(text: String, onClick: () -> Unit) {
     Box(

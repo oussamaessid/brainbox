@@ -4,9 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
@@ -73,7 +71,6 @@ fun GameScreen(
         }
     }
 
-    // ✅ BackHandler - Retour DIRECT sans dialog
     BackHandler(enabled = true) {
         onBackToMenu()
     }
@@ -130,62 +127,70 @@ fun GameScreen(
                         .statusBarsPadding()
                 ) {
                     // ──────────────────────────────────
-                    // CONTENU SCROLLABLE (header + grille + input)
+                    // CONTENU (header + grille + input) - SANS SCROLL
                     // ──────────────────────────────────
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
-                            .verticalScroll(rememberScrollState())
                             .offset(x = shakeOffset.value.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                        // ✅ GameHeader avec bouton retour (retour direct)
                         GameHeader(
                             date = uiState.currentDate,
                             score = uiState.gameState.score,
-                            onBackClick = onBackToMenu  // Retour DIRECT
+                            onBackClick = onBackToMenu
                         )
 
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(1.dp))
 
+                        // ✅ TEXTE RÉDUIT selon hauteur d'écran
                         Text(
                             text = "✨ BRAINBOX ✨",
                             fontSize = when {
-                                screenHeight < 600.dp -> 24.sp
-                                screenHeight < 700.dp -> 26.sp
-                                else -> 28.sp
+                                screenHeight < 600.dp -> 16.sp
+                                screenHeight < 700.dp -> 18.sp
+                                else -> 20.sp
                             },
                             fontWeight = FontWeight.Black,
                             color = Color.White,
                         )
 
+                        // ✅ SUBTITLE RÉDUIT
                         Text(
                             text = getSubtitle(language),
                             fontSize = when {
-                                screenHeight < 600.dp -> 11.sp
-                                screenHeight < 700.dp -> 12.sp
-                                else -> 13.sp
+                                screenHeight < 600.dp -> 8.sp
+                                screenHeight < 700.dp -> 9.sp
+                                else -> 10.sp
                             },
                             color = Color.White.copy(alpha = 0.8f),
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Medium
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        uiState.currentCategory?.let { category ->
-                            WordsCard(
-                                items = category.items,
-                                revealedCount = uiState.gameState.revealedCount,
-                                language = language
-                            )
+                        // ✅ WORDS CARD PREND L'ESPACE DISPONIBLE (weight=1f)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            uiState.currentCategory?.let { category ->
+                                WordsCard(
+                                    items = category.items,
+                                    revealedCount = uiState.gameState.revealedCount,
+                                    language = language
+                                )
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         AnswerInput(
                             userGuess = uiState.gameState.userGuess,
@@ -193,17 +198,25 @@ fun GameScreen(
                             language = language
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
 
                     // ──────────────────────────────────
-                    // CLAVIER FIXE (toujours visible)
+                    // CLAVIER FIXE COMPACT (toujours visible)
                     // ──────────────────────────────────
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(vertical = 8.dp),
+                            .padding(horizontal = when {
+                                screenHeight < 600.dp -> 8.dp
+                                screenHeight < 700.dp -> 10.dp
+                                else -> 12.dp
+                            })
+                            .padding(vertical = when {
+                                screenHeight < 600.dp -> 2.dp
+                                screenHeight < 700.dp -> 3.dp
+                                else -> 4.dp
+                            }),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         CustomKeyboard(
@@ -215,7 +228,7 @@ fun GameScreen(
                             isValidateEnabled = uiState.gameState.userGuess.isNotEmpty()
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                     }
 
                     // ──────────────────────────────────
