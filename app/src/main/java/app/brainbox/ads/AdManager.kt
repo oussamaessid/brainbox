@@ -3,14 +3,11 @@ package app.brainbox.ads
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import app.brainbox.BuildConfig
 import com.google.android.gms.ads.*
 import com.google.android.gms.ads.appopen.AppOpenAd
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.Calendar
 
 class AdManager(private val context: Context) {
@@ -26,10 +23,12 @@ class AdManager(private val context: Context) {
         private const val TEST_BANNER_AD_ID = "ca-app-pub-3940256099942544/9214589741"
 
         private const val TAG = "AdManager"
-        private const val USE_TEST_ADS = true
+        // En debug = annonces test, en release = vraies annonces (jamais cliquer sur ses propres pubs)
+        private val USE_TEST_ADS = BuildConfig.DEBUG
 
-        private const val MAX_INTERSTITIALS_PER_DAY = 5
-        private const val INTERSTITIAL_INTERVAL = 5 * 60 * 1000L  // ✅ 5 minutes fixe
+        private const val MAX_INTERSTITIALS_PER_DAY = 3
+        // Minimum 3 minutes entre deux interstitiels
+        private const val INTERSTITIAL_INTERVAL = 3 * 60 * 1000L
     }
 
     private var interstitialAd: InterstitialAd? = null
@@ -53,7 +52,8 @@ class AdManager(private val context: Context) {
         }
 
         loadInterstitialAd()
-        startInterstitialTimer()
+        // Le timer automatique a été supprimé : les interstitiels ne doivent s'afficher
+        // qu'aux transitions naturelles (fin de partie), jamais automatiquement.
     }
 
     private fun resetDailyCountIfNeeded() {
@@ -136,6 +136,13 @@ class AdManager(private val context: Context) {
             return
         }
 
+        val timeSinceLast = System.currentTimeMillis() - lastInterstitialTime
+        if (lastInterstitialTime > 0 && timeSinceLast < INTERSTITIAL_INTERVAL) {
+            Log.d(TAG, "Too soon since last interstitial. Ad skipped.")
+            onAdDismissed()
+            return
+        }
+
         if (interstitialAd != null) {
             interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
                 override fun onAdDismissedFullScreenContent() {
@@ -158,27 +165,6 @@ class AdManager(private val context: Context) {
         } else {
             Log.d(TAG, "Interstitial Ad not ready")
             onAdDismissed()
-        }
-    }
-
-    // ✅ Timer fixe à 5 minutes, s'arrête après 5 fois/jour
-    private fun startInterstitialTimer() {
-        CoroutineScope(Dispatchers.Main).launch {
-            while (true) {
-                delay(INTERSTITIAL_INTERVAL)
-
-                if (!canShowInterstitialToday()) {
-                    Log.d(TAG, "Daily limit reached. Timer paused until tomorrow.")
-                    continue
-                }
-
-                val timeSinceLast = System.currentTimeMillis() - lastInterstitialTime
-                if (timeSinceLast >= INTERSTITIAL_INTERVAL
-                    && interstitialAd != null
-                    && context is Activity) {
-                    showInterstitialAd(context)
-                }
-            }
         }
     }
 

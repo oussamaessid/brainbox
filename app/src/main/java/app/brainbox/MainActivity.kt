@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -123,13 +124,21 @@ fun BrainBoxApp(
             )
         }
     } else {
+        val activity = LocalContext.current as? android.app.Activity
         GameScreen(
             viewModel = viewModel,
             adManager = adManager,
             language = selectedLanguage!!,
             date = null,
             onBackToMenu = {
-                selectedLanguage = null
+                // Afficher un interstitiel à la transition naturelle (retour au menu)
+                if (activity != null) {
+                    adManager.showInterstitialAd(activity) {
+                        selectedLanguage = null
+                    }
+                } else {
+                    selectedLanguage = null
+                }
             }
         )
     }
