@@ -23,17 +23,18 @@ class AdManager(private val context: Context) {
         private const val TEST_BANNER_AD_ID = "ca-app-pub-3940256099942544/9214589741"
 
         private const val TAG = "AdManager"
-        // En debug = annonces test, en release = vraies annonces (jamais cliquer sur ses propres pubs)
         private val USE_TEST_ADS = BuildConfig.DEBUG
 
         private const val MAX_INTERSTITIALS_PER_DAY = 3
-        // Minimum 3 minutes entre deux interstitiels
         private const val INTERSTITIAL_INTERVAL = 3 * 60 * 1000L
+        // Minimum 4 heures entre deux App Open Ads pour éviter la sur-exposition
+        private const val APP_OPEN_AD_COOLDOWN = 4 * 60 * 60 * 1000L
     }
 
     private var interstitialAd: InterstitialAd? = null
     private var appOpenAd: AppOpenAd? = null
     private var lastInterstitialTime = 0L
+    private var lastAppOpenAdTime = 0L
 
     private var dailyInterstitialCount = 0
     private var lastResetDay = -1
@@ -90,6 +91,13 @@ class AdManager(private val context: Context) {
     }
 
     fun showAppOpenAd(activity: Activity, onAdDismissed: () -> Unit = {}) {
+        val timeSinceLast = System.currentTimeMillis() - lastAppOpenAdTime
+        if (lastAppOpenAdTime > 0 && timeSinceLast < APP_OPEN_AD_COOLDOWN) {
+            Log.d(TAG, "App Open Ad cooldown active. Skipped.")
+            onAdDismissed()
+            return
+        }
+
         if (appOpenAd != null) {
             appOpenAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
                 override fun onAdDismissedFullScreenContent() {
@@ -101,6 +109,7 @@ class AdManager(private val context: Context) {
                     onAdDismissed()
                 }
                 override fun onAdShowedFullScreenContent() {
+                    lastAppOpenAdTime = System.currentTimeMillis()
                     Log.d(TAG, "App Open Ad showed")
                 }
             }

@@ -228,7 +228,7 @@ fun GameScreen(
                             isValidateEnabled = uiState.gameState.userGuess.isNotEmpty()
                         )
 
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
 
                     // ──────────────────────────────────

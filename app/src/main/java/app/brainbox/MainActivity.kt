@@ -54,8 +54,11 @@ class MainActivity : ComponentActivity() {
             preferencesManager = preferencesManager
         )
 
-        adManager.loadAppOpenAd {
-            adManager.showAppOpenAd(this)
+        // savedInstanceState != null → rotation ou recréation → ne pas afficher l'App Open Ad
+        if (savedInstanceState == null) {
+            adManager.loadAppOpenAd {
+                adManager.showAppOpenAd(this)
+            }
         }
 
         setContent {
