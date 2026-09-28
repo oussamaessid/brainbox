@@ -12,8 +12,8 @@ android {
         applicationId = "app.brainbox"
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -68,4 +68,9 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+// Mise à jour obligatoire (Google Play In-App Updates)
+dependencies {
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 }

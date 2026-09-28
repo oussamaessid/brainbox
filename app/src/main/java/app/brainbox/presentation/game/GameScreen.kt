@@ -228,7 +228,9 @@ fun GameScreen(
                             isValidateEnabled = uiState.gameState.userGuess.isNotEmpty()
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // Espace libre entre le clavier et la bannière : évite les
+                        // clics accidentels sur la pub (trafic invalide).
+                        Spacer(modifier = Modifier.height(24.dp))
                     }
 
                     // ──────────────────────────────────
@@ -237,7 +239,6 @@ fun GameScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
                             .navigationBarsPadding()
                     ) {
                         BannerAdView(bannerAd)

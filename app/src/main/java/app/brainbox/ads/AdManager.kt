@@ -29,12 +29,22 @@ class AdManager(private val context: Context) {
         private const val INTERSTITIAL_INTERVAL = 3 * 60 * 1000L
         // Minimum 4 heures entre deux App Open Ads pour éviter la sur-exposition
         private const val APP_OPEN_AD_COOLDOWN = 4 * 60 * 60 * 1000L
+        private const val PREF_LAST_APP_OPEN = "last_app_open_ms"
+        // Si l'App Open arrive plus tard que ça, l'utilisateur tape déjà sur le clavier
+        // du jeu → on ne l'affiche pas (sinon clic accidentel = trafic invalide).
+        private const val APP_OPEN_MAX_WAIT_MS = 4_000L
     }
+
+    private val prefs = context.getSharedPreferences("ad_prefs", Context.MODE_PRIVATE)
+    private var appOpenRequestedAt = 0L
 
     private var interstitialAd: InterstitialAd? = null
     private var appOpenAd: AppOpenAd? = null
     private var lastInterstitialTime = 0L
-    private var lastAppOpenAdTime = 0L
+    // Persisté : sinon le délai de 4 h repart à zéro à chaque lancement de l'app.
+    private var lastAppOpenAdTime: Long
+        get() = prefs.getLong(PREF_LAST_APP_OPEN, 0L)
+        set(value) = prefs.edit().putLong(PREF_LAST_APP_OPEN, value).apply()
 
     private var dailyInterstitialCount = 0
     private var lastResetDay = -1
@@ -72,6 +82,7 @@ class AdManager(private val context: Context) {
     }
 
     fun loadAppOpenAd(onAdLoaded: () -> Unit = {}) {
+        appOpenRequestedAt = System.currentTimeMillis()
         val adRequest = AdRequest.Builder().build()
         val adId = if (USE_TEST_ADS) TEST_APP_OPEN_AD_ID else APP_OPEN_AD_ID
 
@@ -80,6 +91,10 @@ class AdManager(private val context: Context) {
                 override fun onAdLoaded(ad: AppOpenAd) {
                     appOpenAd = ad
                     Log.d(TAG, "App Open Ad loaded")
+                    if (System.currentTimeMillis() - appOpenRequestedAt > APP_OPEN_MAX_WAIT_MS) {
+                        Log.d(TAG, "App Open Ad loaded too late. Not shown.")
+                        return
+                    }
                     onAdLoaded()
                 }
                 override fun onAdFailedToLoad(loadAdError: LoadAdError) {
@@ -94,6 +109,14 @@ class AdManager(private val context: Context) {
         val timeSinceLast = System.currentTimeMillis() - lastAppOpenAdTime
         if (lastAppOpenAdTime > 0 && timeSinceLast < APP_OPEN_AD_COOLDOWN) {
             Log.d(TAG, "App Open Ad cooldown active. Skipped.")
+            onAdDismissed()
+            return
+        }
+
+        // Jamais par-dessus une activité fermée ou passée en arrière-plan.
+        val resumed = (activity as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.currentState
+            ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) ?: true
+        if (activity.isFinishing || activity.isDestroyed || !resumed) {
             onAdDismissed()
             return
         }

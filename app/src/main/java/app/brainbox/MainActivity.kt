@@ -29,13 +29,22 @@ import app.brainbox.presentation.language.LanguageSelectionScreen
 import app.brainbox.utils.PreferencesManager
 
 class MainActivity : ComponentActivity() {
+    // Mise à jour obligatoire : bloque l'app tant qu'une version plus récente existe sur le Play Store.
+    private val forceUpdate = ForceUpdateManager(this)
+
 
     private lateinit var viewModel: GameViewModel
     private lateinit var adManager: AdManager
     private lateinit var preferencesManager: PreferencesManager
 
+    override fun onResume() {
+        super.onResume()
+        forceUpdate.resumeIfInProgress()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        forceUpdate.check { }
 
         adManager = AdManager(this)
         preferencesManager = PreferencesManager(this)
