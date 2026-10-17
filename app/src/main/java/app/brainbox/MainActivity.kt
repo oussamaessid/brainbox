@@ -1,14 +1,21 @@
 package app.brainbox
 
+import android.Manifest
+import android.app.Activity
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -19,23 +26,40 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.brainbox.ads.AdManager
+import app.brainbox.ads.ConsentManager
+import androidx.lifecycle.lifecycleScope
+import app.brainbox.data.player.PlayerRepository
 import app.brainbox.data.repository.GameRepositoryImpl
+import app.brainbox.presentation.player.LeaderboardScreen
+import app.brainbox.presentation.player.ProfileScreen
+import kotlinx.coroutines.launch
 import app.brainbox.domain.repository.Language
-import app.brainbox.domain.usecase.*
+import app.brainbox.notifications.DailyReminderWorker
+import app.brainbox.presentation.components.NextChallengeCountdown
 import app.brainbox.presentation.components.TutorialDialog
+import app.brainbox.presentation.components.getShareText
 import app.brainbox.presentation.game.GameScreen
 import app.brainbox.presentation.game.GameViewModel
 import app.brainbox.presentation.language.LanguageSelectionScreen
+import app.brainbox.stats.StatsScreen
+import app.brainbox.ui.theme.BrainBoxTheme
 import app.brainbox.utils.PreferencesManager
+import app.brainbox.utils.shareText
 
 class MainActivity : ComponentActivity() {
     // Mise à jour obligatoire : bloque l'app tant qu'une version plus récente existe sur le Play Store.
     private val forceUpdate = ForceUpdateManager(this)
 
+    private val preferencesManager by lazy { PreferencesManager(applicationContext) }
+    private val playerRepository by lazy { (application as BrainBoxApplication).playerRepository }
 
-    private lateinit var viewModel: GameViewModel
+    // Survit aux rotations / changements de configuration (l'état de la partie n'est pas perdu).
+    private val viewModel: GameViewModel by viewModels {
+        GameViewModel.factory(GameRepositoryImpl(applicationContext), preferencesManager, playerRepository)
+    }
+
     private lateinit var adManager: AdManager
-    private lateinit var preferencesManager: PreferencesManager
+    private lateinit var consentManager: ConsentManager
 
     override fun onResume() {
         super.onResume()
@@ -47,57 +71,195 @@ class MainActivity : ComponentActivity() {
         forceUpdate.check { }
 
         adManager = AdManager(this)
-        preferencesManager = PreferencesManager(this)
-
-        val repository = GameRepositoryImpl(this)
-        val getDailyChallengeUseCase = GetDailyChallengeUseCase(repository)
-        val getCurrentDateUseCase = GetCurrentDateUseCase(repository)
-        val validateGuessUseCase = ValidateGuessUseCase()
-        val calculateScoreUseCase = CalculateScoreUseCase()
-
-        viewModel = GameViewModel(
-            getDailyChallengeUseCase = getDailyChallengeUseCase,
-            getCurrentDateUseCase = getCurrentDateUseCase,
-            validateGuessUseCase = validateGuessUseCase,
-            calculateScoreUseCase = calculateScoreUseCase,
-            preferencesManager = preferencesManager
-        )
-
-        // savedInstanceState != null → rotation ou recréation → ne pas afficher l'App Open Ad
-        if (savedInstanceState == null) {
-            adManager.loadAppOpenAd {
-                adManager.showAppOpenAd(this)
-            }
-        }
-
+        consentManager = ConsentManager(this)
         setContent {
-            MaterialTheme {
+            BrainBoxTheme(darkTheme = false, dynamicColor = false) {
                 BrainBoxApp(
                     viewModel = viewModel,
                     adManager = adManager,
-                    preferencesManager = preferencesManager
+                    preferencesManager = preferencesManager,
+                    playerRepository = playerRepository,
+                    onPrivacyOptions = if (privacyOptionsRequired.value) {
+                        { consentManager.showPrivacyOptionsForm(this) }
+                    } else null
                 )
             }
         }
+
+        // Pas d'App Open Ad sur rotation (savedInstanceState != null) ni au tout premier
+        // lancement : le tutoriel est affiché et le joueur est en train de taper dessus.
+        val showAppOpenAd = savedInstanceState == null && !preferencesManager.isFirstLaunch()
+
+        // Consentement RGPD d'abord, pubs ensuite. Un utilisateur qui a déjà répondu
+        // peut recevoir des pubs tout de suite, sans attendre la mise à jour du consentement.
+        var adsStarted = false
+        val onConsentReady = {
+            if (!adsStarted && consentManager.canRequestAds) {
+                adsStarted = true
+                adManager.initialize {
+                    if (showAppOpenAd) adManager.loadAppOpenAd { adManager.showAppOpenAd(this) }
+                }
+            }
+        }
+        if (consentManager.canRequestAds) onConsentReady()
+        consentManager.gather(this) {
+            onConsentReady()
+            privacyOptionsRequired.value = consentManager.isPrivacyOptionsRequired
+        }
+
+        DailyReminderWorker.schedule(applicationContext)
+
+        // Victoires restées en attente (hors-ligne) : envoyées au classement dès que possible.
+        lifecycleScope.launch { playerRepository.sync() }
     }
+
+    private val privacyOptionsRequired = mutableStateOf(false)
 }
 
 @Composable
 fun BrainBoxApp(
     viewModel: GameViewModel,
     adManager: AdManager,
-    preferencesManager: PreferencesManager
+    preferencesManager: PreferencesManager,
+    playerRepository: PlayerRepository,
+    onPrivacyOptions: (() -> Unit)?
 ) {
-    var selectedLanguage by remember { mutableStateOf<Language?>(null) }
-    var showCompletedDialog by remember { mutableStateOf(false) }
-    var completedLanguage by remember { mutableStateOf<Language?>(null) }
+    val context = LocalContext.current
+    val activity = context as? Activity
+
+    var selectedLanguage by rememberSaveable { mutableStateOf<Language?>(null) }
+    var showStats by rememberSaveable { mutableStateOf(false) }
+    var showProfile by rememberSaveable { mutableStateOf(false) }
+    var showLeaderboard by rememberSaveable { mutableStateOf(false) }
+    var leaderboardScope by rememberSaveable { mutableStateOf<Language?>(null) }
+    val profile by playerRepository.profile.collectAsState()
+    var completedLanguage by rememberSaveable { mutableStateOf<Language?>(null) }
+    // Incrémenté au retour au menu pour rafraîchir les badges (série, "joué aujourd'hui").
+    var menuRefresh by remember { mutableIntStateOf(0) }
 
     val isFirstLaunch = remember { preferencesManager.isFirstLaunch() }
     var showTutorial by remember { mutableStateOf(isFirstLaunch) }
+    // Bienvenue + profil créé automatiquement : une seule fois, après le tutoriel.
+    var showWelcome by rememberSaveable { mutableStateOf(playerRepository.needsSetup) }
+
+    // Notifications (Android 13+) : demandé une seule fois, après la première partie
+    // terminée plutôt qu'au lancement, quand le joueur comprend l'intérêt du rappel.
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    fun askNotificationPermissionOnce() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !preferencesManager.wasNotificationPermissionAsked()
+        ) {
+            preferencesManager.setNotificationPermissionAsked()
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    fun backToMenu() {
+        menuRefresh++
+        val playedToday = Language.entries.any { viewModel.isGameCompleted(it) }
+        val goToMenu = {
+            selectedLanguage = null
+            if (playedToday) askNotificationPermissionOnce()
+        }
+        // Afficher un interstitiel à la transition naturelle (retour au menu)
+        if (activity != null) adManager.showInterstitialAd(activity, goToMenu) else goToMenu()
+    }
+
+    when {
+        showWelcome && !showTutorial -> ProfileScreen(
+            repository = playerRepository,
+            setup = true,
+            onDone = { showWelcome = false }
+        )
+
+        showProfile -> ProfileScreen(
+            repository = playerRepository,
+            setup = false,
+            onDone = { showProfile = false }
+        )
+
+        showLeaderboard -> LeaderboardScreen(
+            repository = playerRepository,
+            todayNumber = viewModel.todayNumber(),
+            initialScope = leaderboardScope,
+            onEditProfile = { showProfile = true },
+            onBack = { showLeaderboard = false }
+        )
+
+        showStats -> StatsScreen(
+            stats = remember(menuRefresh) { viewModel.getAllStats() },
+            scores = remember(menuRefresh) { viewModel.getAllScores() },
+            todayNumber = viewModel.todayNumber(),
+            onBack = { showStats = false },
+            onResetScores = {
+                viewModel.resetScoresAndStats()
+                menuRefresh++
+            }
+        )
+
+        selectedLanguage == null -> {
+            val badges = remember(menuRefresh) {
+                Language.entries.associateWith { languageBadge(viewModel, it) }
+            }
+            LanguageSelectionScreen(
+                adManager = adManager,
+                badgeFor = { badges[it] },
+                onLanguageSelected = { language ->
+                    if (viewModel.isGameCompleted(language)) {
+                        completedLanguage = language
+                    } else {
+                        // Précharger le challenge AVANT de naviguer vers GameScreen.
+                        // Ainsi quand GameScreen apparaît, isLoading=true et currentCategory=null
+                        // dès le début → le LoadingScreen s'affiche immédiatement, sans flash.
+                        viewModel.loadDailyChallenge(language)
+                        selectedLanguage = language
+                    }
+                },
+                onShowStats = {
+                    menuRefresh++
+                    showStats = true
+                },
+                profile = profile,
+                onShowProfile = { showProfile = true },
+                onShowLeaderboard = {
+                    leaderboardScope = null
+                    showLeaderboard = true
+                },
+                onPrivacyOptions = onPrivacyOptions
+            )
+
+            completedLanguage?.let { language ->
+                CompletedGameDialog(
+                    language = language,
+                    isWin = viewModel.wasGameWon(language),
+                    totalScore = viewModel.getTotalScore(language),
+                    millisUntilNext = viewModel::millisUntilNextChallenge,
+                    onShare = { shareText(context, viewModel.buildShareText(language)) },
+                    onDismiss = { completedLanguage = null }
+                )
+            }
+        }
+
+        else -> GameScreen(
+            viewModel = viewModel,
+            adManager = adManager,
+            language = selectedLanguage!!,
+            onBackToMenu = ::backToMenu,
+            onShowLeaderboard = {
+                // Le classement s'ouvre sur la langue jouée ; le retour mène au menu.
+                leaderboardScope = selectedLanguage
+                menuRefresh++
+                selectedLanguage = null
+                showLeaderboard = true
+            }
+        )
+    }
 
     if (showTutorial) {
         TutorialDialog(
-            language = Language.ENGLISH,
+            language = Language.fromDeviceLocale(),
             onDismiss = {
                 showTutorial = false
                 if (isFirstLaunch) {
@@ -106,53 +268,16 @@ fun BrainBoxApp(
             }
         )
     }
+}
 
-    if (selectedLanguage == null) {
-        LanguageSelectionScreen(
-            adManager = adManager,
-            onLanguageSelected = { language ->
-                if (viewModel.isGameCompleted(language, null)) {
-                    completedLanguage = language
-                    showCompletedDialog = true
-                } else {
-                    // FIX: Précharger le challenge AVANT de naviguer vers GameScreen.
-                    // Ainsi quand GameScreen apparaît, isLoading=true et currentCategory=null
-                    // dès le début → le LoadingScreen s'affiche immédiatement, sans flash.
-                    viewModel.loadDailyChallenge(language, null)
-                    selectedLanguage = language
-                }
-            }
-        )
-
-        if (showCompletedDialog && completedLanguage != null) {
-            CompletedGameDialog(
-                language = completedLanguage!!,
-                isWin = viewModel.wasGameWon(completedLanguage!!, null),
-                totalScore = viewModel.getTotalScore(completedLanguage!!),
-                onDismiss = {
-                    showCompletedDialog = false
-                    completedLanguage = null
-                }
-            )
-        }
-    } else {
-        val activity = LocalContext.current as? android.app.Activity
-        GameScreen(
-            viewModel = viewModel,
-            adManager = adManager,
-            language = selectedLanguage!!,
-            date = null,
-            onBackToMenu = {
-                // Afficher un interstitiel à la transition naturelle (retour au menu)
-                if (activity != null) {
-                    adManager.showInterstitialAd(activity) {
-                        selectedLanguage = null
-                    }
-                } else {
-                    selectedLanguage = null
-                }
-            }
-        )
+private fun languageBadge(viewModel: GameViewModel, language: Language): String? {
+    val streak = viewModel.getAllStats()[language]?.streakOn(viewModel.todayNumber()) ?: 0
+    val played = viewModel.isGameCompleted(language)
+    return when {
+        played && streak > 0 -> "✅ 🔥 $streak"
+        played -> "✅"
+        streak > 0 -> "🔥 $streak"
+        else -> null
     }
 }
 
@@ -161,6 +286,8 @@ fun CompletedGameDialog(
     language: Language,
     isWin: Boolean,
     totalScore: Int,
+    millisUntilNext: () -> Long,
+    onShare: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Box(
@@ -269,6 +396,32 @@ fun CompletedGameDialog(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    NextChallengeCountdown(
+                        language = language,
+                        millisUntilNext = millisUntilNext,
+                        color = Color.White
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = onShare,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                    ) {
+                        Text(
+                            text = "📤 ${getShareText(language)}",
+                            color = if (isWin) Color(0xFF1B5E20) else Color(0xFF880E4F),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Button(
                         onClick = onDismiss,

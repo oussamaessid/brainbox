@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,7 +42,7 @@ fun GameHeader(
                 .background(Color.White.copy(alpha = 0.15f))
         ) {
             Icon(
-                Icons.Default.ArrowBack,
+                Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
                 tint = Color.White,
                 modifier = Modifier.size(24.dp)
@@ -226,8 +226,16 @@ fun AnimatedWordCard(
 fun AnswerInput(
     userGuess: String,
     lives: Int,
-    language: Language
+    language: Language,
+    isCloseGuess: Boolean = false,
+    hintButton: (@Composable () -> Unit)? = null
 ) {
+    val closeText = when (language) {
+        Language.FRENCH -> "🤏 Presque ! Vérifiez l'orthographe"
+        Language.ENGLISH -> "🤏 So close! Check the spelling"
+        Language.ARABIC -> "🤏 قريب جداً! تحقق من الإملاء"
+    }
+
     val livesText = when (language) {
         Language.FRENCH -> "Votre réponse"
         Language.ENGLISH -> "Your answer"
@@ -257,12 +265,21 @@ fun AnswerInput(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = livesText,
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontWeight = FontWeight.SemiBold
-                )
+                when {
+                    isCloseGuess -> Text(
+                        text = closeText,
+                        fontSize = 11.sp,
+                        color = Color(0xFFFFB74D),
+                        fontWeight = FontWeight.Bold
+                    )
+                    hintButton != null -> hintButton()
+                    else -> Text(
+                        text = livesText,
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "$livesLabel: ",
@@ -291,7 +308,7 @@ fun AnswerInput(
                     )
                     .border(
                         2.dp,
-                        Color(0xFFFFD93D).copy(alpha = 0.3f),
+                        if (isCloseGuess) Color(0xFFFFB74D) else Color(0xFFFFD93D).copy(alpha = 0.3f),
                         RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -544,37 +561,120 @@ fun SpecialKeyButton(
 }
 
 @Composable
+fun HintButton(language: Language, enabled: Boolean, onClick: () -> Unit) {
+    val label = when (language) {
+        Language.FRENCH -> "💡 Indice (vidéo)"
+        Language.ENGLISH -> "💡 Hint (video)"
+        Language.ARABIC -> "💡 تلميح (فيديو)"
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFFFFD93D).copy(alpha = if (enabled) 0.25f else 0.08f))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White.copy(alpha = if (enabled) 1f else 0.4f)
+        )
+    }
+}
+
+/** Compte à rebours jusqu'au prochain défi (minuit, heure locale). */
+@Composable
+fun NextChallengeCountdown(
+    language: Language,
+    millisUntilNext: () -> Long,
+    color: Color = Color.Gray
+) {
+    var remaining by remember { mutableLongStateOf(millisUntilNext()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            remaining = millisUntilNext()
+        }
+    }
+    val total = remaining / 1000
+    val time = String.format(java.util.Locale.US, "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
+    val label = when (language) {
+        Language.FRENCH -> "Prochain défi dans"
+        Language.ENGLISH -> "Next challenge in"
+        Language.ARABIC -> "التحدي القادم بعد"
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, fontSize = 12.sp, color = color)
+        Text(text = "⏳ $time", fontSize = 20.sp, fontWeight = FontWeight.Black, color = color)
+    }
+}
+
+fun getShareText(language: Language): String = when (language) {
+    Language.FRENCH -> "PARTAGER"
+    Language.ENGLISH -> "SHARE"
+    Language.ARABIC -> "مشاركة"
+}
+
+@Composable
 fun ResultDialog(
     isWin: Boolean,
     categoryName: String,
     score: Int,
     language: Language,
-    onPlayAgain: () -> Unit
+    millisUntilNext: () -> Long,
+    onShare: () -> Unit,
+    onLeaderboard: () -> Unit,
+    onClose: () -> Unit
 ) {
-    val (congrats, tooBad, categoryWas, playAgain) = when (language) {
-        Language.FRENCH -> listOf("BRAVO !", "DOMMAGE !", "La catégorie était :", "REJOUER")
-        Language.ENGLISH -> listOf("CONGRATS!", "TOO BAD!", "The category was:", "PLAY AGAIN")
-        Language.ARABIC -> listOf("!أحسنت", "!للأسف", ":الفئة كانت", "العب مرة أخرى")
+    val leaderboard = when (language) {
+        Language.FRENCH -> "🏆 CLASSEMENT"
+        Language.ENGLISH -> "🏆 LEADERBOARD"
+        Language.ARABIC -> "🏆 الترتيب"
     }
+    val (congrats, tooBad, categoryWas, menu) = when (language) {
+        Language.FRENCH -> listOf("BRAVO !", "DOMMAGE !", "La catégorie était :", "MENU")
+        Language.ENGLISH -> listOf("CONGRATS!", "TOO BAD!", "The category was:", "MENU")
+        Language.ARABIC -> listOf("!أحسنت", "!للأسف", ":الفئة كانت", "القائمة")
+    }
+    val mainColor = if (isWin) Color(0xFF4CAF50) else Color(0xFFFF5252)
 
     AlertDialog(
         onDismissRequest = { },
         confirmButton = {
-            Button(
-                onClick = onPlayAgain,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isWin) Color(0xFF4CAF50) else Color(0xFFFF5252)
-                )
-            ) {
-                Text(
-                    "$playAgain ${if (isWin) "🚀" else "💪"}",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = onShare,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = mainColor)
+                ) {
+                    Text("📤 ${getShareText(language)}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onLeaderboard,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF8008))
+                ) {
+                    Text(leaderboard, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = mainColor)
+                ) {
+                    Text(menu, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
             }
         },
         title = {
@@ -590,12 +690,15 @@ fun ResultDialog(
                     text = if (isWin) congrats else tooBad,
                     fontWeight = FontWeight.Black,
                     fontSize = 28.sp,
-                    color = if (isWin) Color(0xFF4CAF50) else Color(0xFFFF5252)
+                    color = mainColor
                 )
             }
         },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(
                     text = categoryWas,
                     fontSize = 14.sp,
@@ -614,9 +717,11 @@ fun ResultDialog(
                         text = "+$score points !",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFFD93D)
+                        color = Color(0xFFFF8008)
                     )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
+                NextChallengeCountdown(language = language, millisUntilNext = millisUntilNext)
             }
         },
         shape = RoundedCornerShape(28.dp),

@@ -2,5 +2,6 @@ package app.brainbox.domain.model
 
 data class DailyChallenge(
     val date: String,
-    val categories: List<Category>
+    val number: Int,
+    val category: Category
 )

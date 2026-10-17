@@ -1,5 +1,6 @@
 package app.brainbox.presentation.game
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -15,24 +16,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.sp
 import app.brainbox.ads.AdManager
+import app.brainbox.domain.model.GameState
 import app.brainbox.domain.repository.Language
 import app.brainbox.presentation.components.*
+import app.brainbox.utils.shareText
 
 @Composable
 fun GameScreen(
     viewModel: GameViewModel,
     adManager: AdManager,
     language: Language,
-    date: String?,
-    onBackToMenu: () -> Unit
+    onBackToMenu: () -> Unit,
+    onShowLeaderboard: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val bannerAd = remember { adManager.createBannerAdView(isLanguageScreen = false) }
+    val isRewardedReady by adManager.isRewardedReady.collectAsState()
+    val context = LocalContext.current
+    val activity = context as? Activity
 
     val shakeOffset = remember { Animatable(0f) }
     val pulseScale = remember { Animatable(1f) }
@@ -40,16 +48,13 @@ fun GameScreen(
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
 
-    LaunchedEffect(language, date) {
+    LaunchedEffect(language) {
         val currentState = viewModel.uiState.value
         val alreadyLoadingOrLoaded = currentState.isLoading
                 || (currentState.currentCategory != null && currentState.language == language)
 
         if (!alreadyLoadingOrLoaded) {
-            println("🎬 GameScreen fallback - Chargement (langue=$language, date=$date)")
-            viewModel.loadDailyChallenge(language, date)
-        } else {
-            println("⏭️ GameScreen - Chargement déjà en cours ou données prêtes, skip")
+            viewModel.loadDailyChallenge(language)
         }
     }
 
@@ -114,7 +119,7 @@ fun GameScreen(
                     error = uiState.error!!,
                     language = language,
                     onRetry = {
-                        viewModel.loadDailyChallenge(language, date)
+                        viewModel.loadDailyChallenge(language)
                     },
                     onBackToMenu = onBackToMenu
                 )
@@ -134,7 +139,7 @@ fun GameScreen(
                             .weight(1f)
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
-                            .offset(x = shakeOffset.value.dp),
+                            .offset { IntOffset(shakeOffset.value.roundToInt(), 0) },
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -192,10 +197,24 @@ fun GameScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
+                        val gameState = uiState.gameState
+                        val canUseHint = adManager.isRewardedAvailable &&
+                                !gameState.isGameOver &&
+                                gameState.hintsUsed < GameState.MAX_HINTS &&
+                                gameState.revealedCount < (uiState.currentCategory?.items?.size ?: 0)
+
                         AnswerInput(
-                            userGuess = uiState.gameState.userGuess,
-                            lives = uiState.gameState.lives,
-                            language = language
+                            userGuess = gameState.userGuess,
+                            lives = gameState.lives,
+                            language = language,
+                            isCloseGuess = uiState.showCloseGuess,
+                            hintButton = if (canUseHint && activity != null) {
+                                {
+                                    HintButton(language = language, enabled = isRewardedReady) {
+                                        adManager.showRewardedAd(activity) { viewModel.onHintRewarded() }
+                                    }
+                                }
+                            } else null
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -241,7 +260,7 @@ fun GameScreen(
                             .fillMaxWidth()
                             .navigationBarsPadding()
                     ) {
-                        BannerAdView(bannerAd)
+                        BannerAdView(adManager, isLanguageScreen = false)
                     }
                 }
             }
@@ -252,10 +271,16 @@ fun GameScreen(
                 ResultDialog(
                     isWin = uiState.gameState.isWin,
                     categoryName = category.name,
-                    score = if (uiState.gameState.isWin) uiState.gameState.lives * 20 else 0,
+                    score = viewModel.lastGameScore(),
                     language = language,
-                    onPlayAgain = {
-                        viewModel.resetGame()
+                    millisUntilNext = viewModel::millisUntilNextChallenge,
+                    onShare = { shareText(context, viewModel.buildShareText(language)) },
+                    onLeaderboard = {
+                        viewModel.dismissDialog()
+                        onShowLeaderboard()
+                    },
+                    onClose = {
+                        viewModel.dismissDialog()
                         onBackToMenu()
                     }
                 )

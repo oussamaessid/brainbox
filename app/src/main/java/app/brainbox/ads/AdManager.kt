@@ -8,6 +8,11 @@ import com.google.android.gms.ads.*
 import com.google.android.gms.ads.appopen.AppOpenAd
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.gms.ads.rewarded.RewardedAd
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.Calendar
 
 class AdManager(private val context: Context) {
@@ -17,10 +22,14 @@ class AdManager(private val context: Context) {
         private const val APP_OPEN_AD_ID = "ca-app-pub-9651830078758870/2715397515"
         private const val BANNER_LANGUAGE_ID = "ca-app-pub-9651830078758870/1501868672"
         private const val BANNER_GAME_ID = "ca-app-pub-9651830078758870/7875705331"
+        // TODO: créer un bloc "Avec récompense" dans AdMob et coller son ID ici.
+        // Tant qu'il est vide, le bouton "Indice" est masqué en release.
+        private const val REWARDED_AD_ID = ""
 
         private const val TEST_INTERSTITIAL_AD_ID = "ca-app-pub-3940256099942544/1033173712"
         private const val TEST_APP_OPEN_AD_ID = "ca-app-pub-3940256099942544/9257395921"
         private const val TEST_BANNER_AD_ID = "ca-app-pub-3940256099942544/9214589741"
+        private const val TEST_REWARDED_AD_ID = "ca-app-pub-3940256099942544/5224354917"
 
         private const val TAG = "AdManager"
         private val USE_TEST_ADS = BuildConfig.DEBUG
@@ -30,75 +39,147 @@ class AdManager(private val context: Context) {
         // Minimum 4 heures entre deux App Open Ads pour éviter la sur-exposition
         private const val APP_OPEN_AD_COOLDOWN = 4 * 60 * 60 * 1000L
         private const val PREF_LAST_APP_OPEN = "last_app_open_ms"
-        // Si l'App Open arrive plus tard que ça, l'utilisateur tape déjà sur le clavier
-        // du jeu → on ne l'affiche pas (sinon clic accidentel = trafic invalide).
+        private const val PREF_INTERSTITIAL_DAY = "interstitial_day"
+        private const val PREF_INTERSTITIAL_COUNT = "interstitial_count"
+        // Si l'App Open arrive plus de 4 s après le lancement, l'utilisateur tape déjà
+        // dans l'app → on ne l'affiche pas (sinon clic accidentel = trafic invalide).
         private const val APP_OPEN_MAX_WAIT_MS = 4_000L
     }
 
     private val prefs = context.getSharedPreferences("ad_prefs", Context.MODE_PRIVATE)
-    private var appOpenRequestedAt = 0L
+    // Mesuré depuis le lancement (et non depuis la requête) : le consentement RGPD
+    // et l'init du SDK retardent la requête, la pub arriverait en pleine partie.
+    private val createdAt = System.currentTimeMillis()
 
     private var interstitialAd: InterstitialAd? = null
     private var appOpenAd: AppOpenAd? = null
+    private var rewardedAd: RewardedAd? = null
+    private var rewardedRetries = 0
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var lastInterstitialTime = 0L
     // Persisté : sinon le délai de 4 h repart à zéro à chaque lancement de l'app.
     private var lastAppOpenAdTime: Long
         get() = prefs.getLong(PREF_LAST_APP_OPEN, 0L)
         set(value) = prefs.edit().putLong(PREF_LAST_APP_OPEN, value).apply()
 
-    private var dailyInterstitialCount = 0
-    private var lastResetDay = -1
+    /** true une fois le consentement obtenu et le SDK initialisé : aucune pub n'est demandée avant. */
+    private val _isReady = MutableStateFlow(false)
+    val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
 
-    init {
+    private val _isRewardedReady = MutableStateFlow(false)
+    val isRewardedReady: StateFlow<Boolean> = _isRewardedReady.asStateFlow()
+
+    val isRewardedAvailable: Boolean get() = USE_TEST_ADS || REWARDED_AD_ID.isNotEmpty()
+
+    /** À appeler après le consentement UMP (ConsentManager.canRequestAds). */
+    fun initialize(onReady: () -> Unit = {}) {
+        if (_isReady.value) {
+            onReady()
+            return
+        }
+        if (USE_TEST_ADS) {
+            MobileAds.setRequestConfiguration(
+                RequestConfiguration.Builder()
+                    .setTestDeviceIds(listOf(AdRequest.DEVICE_ID_EMULATOR))
+                    .build()
+            )
+        }
         MobileAds.initialize(context) {
             Log.d(TAG, "AdMob SDK initialized")
-        }
-
-        if (USE_TEST_ADS) {
-            val testDeviceIds = listOf(AdRequest.DEVICE_ID_EMULATOR)
-            val configuration = RequestConfiguration.Builder()
-                .setTestDeviceIds(testDeviceIds)
-                .build()
-            MobileAds.setRequestConfiguration(configuration)
-        }
-
-        loadInterstitialAd()
-        // Le timer automatique a été supprimé : les interstitiels ne doivent s'afficher
-        // qu'aux transitions naturelles (fin de partie), jamais automatiquement.
-    }
-
-    private fun resetDailyCountIfNeeded() {
-        val today = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-        if (today != lastResetDay) {
-            dailyInterstitialCount = 0
-            lastResetDay = today
-            Log.d(TAG, "Daily interstitial counter reset")
+            if (!_isReady.value) {
+                _isReady.value = true
+                loadInterstitialAd()
+                loadRewardedAd()
+            }
+            onReady()
         }
     }
+
+    // ==================== INTERSTITIAL ====================
 
     private fun canShowInterstitialToday(): Boolean {
-        resetDailyCountIfNeeded()
-        return dailyInterstitialCount < MAX_INTERSTITIALS_PER_DAY
+        val today = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+        if (prefs.getInt(PREF_INTERSTITIAL_DAY, -1) != today) {
+            prefs.edit().putInt(PREF_INTERSTITIAL_DAY, today).putInt(PREF_INTERSTITIAL_COUNT, 0).apply()
+        }
+        return prefs.getInt(PREF_INTERSTITIAL_COUNT, 0) < MAX_INTERSTITIALS_PER_DAY
     }
 
+    private fun loadInterstitialAd() {
+        if (!_isReady.value) return
+        val adId = if (USE_TEST_ADS) TEST_INTERSTITIAL_AD_ID else INTERSTITIAL_AD_ID
+
+        InterstitialAd.load(context, adId, AdRequest.Builder().build(),
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    interstitialAd = ad
+                }
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                    Log.d(TAG, "Interstitial Ad failed to load: ${loadAdError.message}")
+                    interstitialAd = null
+                }
+            }
+        )
+    }
+
+    fun showInterstitialAd(activity: Activity, onAdDismissed: () -> Unit = {}) {
+        if (!canShowInterstitialToday()) {
+            onAdDismissed()
+            return
+        }
+
+        val timeSinceLast = System.currentTimeMillis() - lastInterstitialTime
+        if (lastInterstitialTime > 0 && timeSinceLast < INTERSTITIAL_INTERVAL) {
+            onAdDismissed()
+            return
+        }
+
+        val ad = interstitialAd
+        if (ad == null) {
+            onAdDismissed()
+            loadInterstitialAd()
+            return
+        }
+
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                interstitialAd = null
+                loadInterstitialAd()
+                onAdDismissed()
+            }
+            override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                interstitialAd = null
+                loadInterstitialAd()
+                onAdDismissed()
+            }
+            override fun onAdShowedFullScreenContent() {
+                lastInterstitialTime = System.currentTimeMillis()
+                prefs.edit()
+                    .putInt(PREF_INTERSTITIAL_COUNT, prefs.getInt(PREF_INTERSTITIAL_COUNT, 0) + 1)
+                    .apply()
+            }
+        }
+        ad.show(activity)
+    }
+
+    // ==================== APP OPEN ====================
+
     fun loadAppOpenAd(onAdLoaded: () -> Unit = {}) {
-        appOpenRequestedAt = System.currentTimeMillis()
-        val adRequest = AdRequest.Builder().build()
+        if (!_isReady.value) return
         val adId = if (USE_TEST_ADS) TEST_APP_OPEN_AD_ID else APP_OPEN_AD_ID
 
-        AppOpenAd.load(context, adId, adRequest,
+        AppOpenAd.load(context, adId, AdRequest.Builder().build(),
             object : AppOpenAd.AppOpenAdLoadCallback() {
                 override fun onAdLoaded(ad: AppOpenAd) {
                     appOpenAd = ad
-                    Log.d(TAG, "App Open Ad loaded")
-                    if (System.currentTimeMillis() - appOpenRequestedAt > APP_OPEN_MAX_WAIT_MS) {
+                    if (System.currentTimeMillis() - createdAt > APP_OPEN_MAX_WAIT_MS) {
                         Log.d(TAG, "App Open Ad loaded too late. Not shown.")
                         return
                     }
                     onAdLoaded()
                 }
                 override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                    Log.e(TAG, "App Open Ad failed to load: ${loadAdError.message}")
+                    Log.d(TAG, "App Open Ad failed to load: ${loadAdError.message}")
                     appOpenAd = null
                 }
             }
@@ -108,7 +189,6 @@ class AdManager(private val context: Context) {
     fun showAppOpenAd(activity: Activity, onAdDismissed: () -> Unit = {}) {
         val timeSinceLast = System.currentTimeMillis() - lastAppOpenAdTime
         if (lastAppOpenAdTime > 0 && timeSinceLast < APP_OPEN_AD_COOLDOWN) {
-            Log.d(TAG, "App Open Ad cooldown active. Skipped.")
             onAdDismissed()
             return
         }
@@ -121,99 +201,87 @@ class AdManager(private val context: Context) {
             return
         }
 
-        if (appOpenAd != null) {
-            appOpenAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    appOpenAd = null
-                    onAdDismissed()
-                }
-                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                    appOpenAd = null
-                    onAdDismissed()
-                }
-                override fun onAdShowedFullScreenContent() {
-                    lastAppOpenAdTime = System.currentTimeMillis()
-                    Log.d(TAG, "App Open Ad showed")
-                }
-            }
-            appOpenAd?.show(activity)
-        } else {
+        val ad = appOpenAd
+        if (ad == null) {
             onAdDismissed()
-            loadAppOpenAd()
+            return
         }
+
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                appOpenAd = null
+                onAdDismissed()
+            }
+            override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                appOpenAd = null
+                onAdDismissed()
+            }
+            override fun onAdShowedFullScreenContent() {
+                lastAppOpenAdTime = System.currentTimeMillis()
+            }
+        }
+        ad.show(activity)
     }
 
-    private fun loadInterstitialAd() {
-        val adRequest = AdRequest.Builder().build()
-        val adId = if (USE_TEST_ADS) TEST_INTERSTITIAL_AD_ID else INTERSTITIAL_AD_ID
+    // ==================== REWARDED (indice) ====================
 
-        InterstitialAd.load(context, adId, adRequest,
-            object : InterstitialAdLoadCallback() {
-                override fun onAdLoaded(ad: InterstitialAd) {
-                    interstitialAd = ad
-                    Log.d(TAG, "Interstitial Ad loaded")
+    private fun loadRewardedAd() {
+        if (!_isReady.value || !isRewardedAvailable || rewardedAd != null) return
+        val adId = if (USE_TEST_ADS) TEST_REWARDED_AD_ID else REWARDED_AD_ID
+
+        RewardedAd.load(context, adId, AdRequest.Builder().build(),
+            object : RewardedAdLoadCallback() {
+                override fun onAdLoaded(ad: RewardedAd) {
+                    rewardedAd = ad
+                    rewardedRetries = 0
+                    _isRewardedReady.value = true
                 }
                 override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                    Log.e(TAG, "Interstitial Ad failed to load: ${loadAdError.message}")
-                    interstitialAd = null
+                    Log.d(TAG, "Rewarded Ad failed to load: ${loadAdError.message}")
+                    rewardedAd = null
+                    _isRewardedReady.value = false
+                    // Nouvel essai (30 s, 60 s, 90 s) : sinon le bouton "Indice" reste grisé.
+                    if (rewardedRetries < 3) {
+                        rewardedRetries++
+                        handler.postDelayed({ loadRewardedAd() }, rewardedRetries * 30_000L)
+                    }
                 }
             }
         )
     }
 
-    fun showInterstitialAd(activity: Activity, onAdDismissed: () -> Unit = {}) {
-        if (!canShowInterstitialToday()) {
-            Log.d(TAG, "Daily limit reached ($MAX_INTERSTITIALS_PER_DAY/day). Ad skipped.")
-            onAdDismissed()
-            return
-        }
+    /** [onRewarded] n'est appelé que si la vidéo a été regardée jusqu'au bout. */
+    fun showRewardedAd(activity: Activity, onRewarded: () -> Unit) {
+        val ad = rewardedAd ?: return loadRewardedAd()
 
-        val timeSinceLast = System.currentTimeMillis() - lastInterstitialTime
-        if (lastInterstitialTime > 0 && timeSinceLast < INTERSTITIAL_INTERVAL) {
-            Log.d(TAG, "Too soon since last interstitial. Ad skipped.")
-            onAdDismissed()
-            return
-        }
-
-        if (interstitialAd != null) {
-            interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    interstitialAd = null
-                    loadInterstitialAd()
-                    onAdDismissed()
-                }
-                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                    interstitialAd = null
-                    loadInterstitialAd()
-                    onAdDismissed()
-                }
-                override fun onAdShowedFullScreenContent() {
-                    dailyInterstitialCount++
-                    lastInterstitialTime = System.currentTimeMillis()
-                    Log.d(TAG, "Interstitial shown. Count: $dailyInterstitialCount/$MAX_INTERSTITIALS_PER_DAY")
-                }
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                rewardedAd = null
+                _isRewardedReady.value = false
+                loadRewardedAd()
             }
-            interstitialAd?.show(activity)
-        } else {
-            Log.d(TAG, "Interstitial Ad not ready")
-            onAdDismissed()
+            override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                rewardedAd = null
+                _isRewardedReady.value = false
+                loadRewardedAd()
+            }
         }
+        ad.show(activity) { onRewarded() }
     }
 
-    fun getBannerAdId(isLanguageScreen: Boolean): String {
-        return if (USE_TEST_ADS) TEST_BANNER_AD_ID
-        else if (isLanguageScreen) BANNER_LANGUAGE_ID else BANNER_GAME_ID
-    }
+    // ==================== BANNER ====================
 
     fun createBannerAdView(isLanguageScreen: Boolean): AdView {
         val adView = AdView(context)
-        adView.adUnitId = getBannerAdId(isLanguageScreen)
+        adView.adUnitId = when {
+            USE_TEST_ADS -> TEST_BANNER_AD_ID
+            isLanguageScreen -> BANNER_LANGUAGE_ID
+            else -> BANNER_GAME_ID
+        }
         adView.setAdSize(AdSize.BANNER)
-        adView.loadAd(AdRequest.Builder().build())
         adView.adListener = object : AdListener() {
-            override fun onAdLoaded() { Log.d(TAG, "Banner Ad loaded") }
             override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                Log.e(TAG, "Banner Ad failed to load: ${loadAdError.message}")
+                Log.d(TAG, "Banner Ad failed to load: ${loadAdError.message}")
             }
         }
         return adView

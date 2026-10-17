@@ -2,6 +2,8 @@ package app.brainbox.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.brainbox.domain.model.GameState
+import app.brainbox.domain.model.PlayerStats
 import app.brainbox.domain.repository.Language
 
 class PreferencesManager(context: Context) {
@@ -14,6 +16,9 @@ class PreferencesManager(context: Context) {
     companion object {
         private const val PREFS_NAME = "brainbox_prefs"
         private const val KEY_FIRST_LAUNCH = "first_launch"
+        private const val KEY_LAST_LANGUAGE = "last_language"
+        private const val KEY_NOTIFICATION_ASKED = "notification_permission_asked"
+        private const val KEY_STATS_MIGRATED = "stats_migrated_v6"
 
         // Keys pour les scores
         private const val KEY_SCORE_PREFIX = "score_"
@@ -21,9 +26,18 @@ class PreferencesManager(context: Context) {
         // Keys pour les résultats des jeux
         private const val KEY_GAME_RESULT_PREFIX = "game_result_"
         private const val KEY_GAME_COMPLETED_PREFIX = "game_completed_"
+        private const val KEY_GAME_ATTEMPTS_PREFIX = "game_attempts_"
+        private const val KEY_GAME_HINTS_PREFIX = "game_hints_"
 
         // Keys pour l'état en cours de la partie
         private const val KEY_GAME_STATE_PREFIX = "game_state_"
+
+        // Keys pour les statistiques
+        private const val KEY_STATS_PREFIX = "stats_"
+    }
+
+    init {
+        migrateStatsIfNeeded()
     }
 
     fun isFirstLaunch(): Boolean {
@@ -34,175 +48,171 @@ class PreferencesManager(context: Context) {
         prefs.edit().putBoolean(KEY_FIRST_LAUNCH, false).apply()
     }
 
-    fun resetFirstLaunch() {
-        prefs.edit().putBoolean(KEY_FIRST_LAUNCH, true).apply()
+    fun getLastLanguage(): Language? =
+        prefs.getString(KEY_LAST_LANGUAGE, null)?.let { runCatching { Language.valueOf(it) }.getOrNull() }
+
+    fun setLastLanguage(language: Language) {
+        prefs.edit().putString(KEY_LAST_LANGUAGE, language.name).apply()
     }
 
+    fun wasNotificationPermissionAsked(): Boolean = prefs.getBoolean(KEY_NOTIFICATION_ASKED, false)
+
+    fun setNotificationPermissionAsked() {
+        prefs.edit().putBoolean(KEY_NOTIFICATION_ASKED, true).apply()
+    }
+
+    // ==================== SCORES ====================
 
     fun getScore(language: Language): Int {
-        val key = "${KEY_SCORE_PREFIX}${language.name}"
-        return prefs.getInt(key, 0)
+        return prefs.getInt("${KEY_SCORE_PREFIX}${language.name}", 0)
     }
 
-    fun saveScore(language: Language, score: Int) {
-        val key = "${KEY_SCORE_PREFIX}${language.name}"
-        prefs.edit().putInt(key, score).apply()
-        println("💾 Score sauvegardé: $language = $score points")
+    private fun addScore(language: Language, pointsToAdd: Int) {
+        prefs.edit().putInt("${KEY_SCORE_PREFIX}${language.name}", getScore(language) + pointsToAdd).apply()
     }
 
-    fun addScore(language: Language, pointsToAdd: Int) {
-        val currentScore = getScore(language)
-        val newScore = currentScore + pointsToAdd
-        saveScore(language, newScore)
-        println("➕ Score ajouté: $language: $currentScore + $pointsToAdd = $newScore")
-    }
-
-    fun resetScore(language: Language) {
-        saveScore(language, 0)
-    }
-
-    fun getAllScores(): Map<Language, Int> {
-        return mapOf(
-            Language.FRENCH to getScore(Language.FRENCH),
-            Language.ENGLISH to getScore(Language.ENGLISH),
-            Language.ARABIC to getScore(Language.ARABIC)
-        )
-    }
+    fun getAllScores(): Map<Language, Int> = Language.entries.associateWith { getScore(it) }
 
     // ==================== GAME RESULT MANAGEMENT ====================
 
-    fun saveGameResult(language: Language, date: String, isWin: Boolean, score: Int) {
+    fun saveGameResult(
+        language: Language,
+        date: String,
+        dayNumber: Int,
+        isWin: Boolean,
+        score: Int,
+        attempts: Int,
+        hintsUsed: Int
+    ) {
         val gameKey = "${language.name}_$date"
+        if (prefs.getBoolean("${KEY_GAME_COMPLETED_PREFIX}$gameKey", false)) return
 
         prefs.edit()
             .putBoolean("${KEY_GAME_COMPLETED_PREFIX}$gameKey", true)
             .putBoolean("${KEY_GAME_RESULT_PREFIX}$gameKey", isWin)
+            .putInt("${KEY_GAME_ATTEMPTS_PREFIX}$gameKey", attempts)
+            .putInt("${KEY_GAME_HINTS_PREFIX}$gameKey", hintsUsed)
             .apply()
 
         if (isWin) {
             addScore(language, score)
         }
-
-        println("💾 Résultat sauvegardé: $gameKey = ${if (isWin) "GAGNÉ" else "PERDU"} (${if (isWin) "+$score pts" else "0 pts"})")
+        saveStats(language, getStats(language).record(dayNumber, isWin, attempts))
     }
 
-    fun isGameCompleted(language: Language, date: String): Boolean {
-        val gameKey = "${language.name}_$date"
-        val key = "${KEY_GAME_COMPLETED_PREFIX}$gameKey"
-        val isCompleted = prefs.getBoolean(key, false)
-        println("🔍 isGameCompleted($language, $date) = $isCompleted")
-        return isCompleted
+    fun isGameCompleted(language: Language, date: String): Boolean =
+        prefs.getBoolean("${KEY_GAME_COMPLETED_PREFIX}${language.name}_$date", false)
+
+    fun wasGameWon(language: Language, date: String): Boolean =
+        prefs.getBoolean("${KEY_GAME_RESULT_PREFIX}${language.name}_$date", false)
+
+    fun getGameAttempts(language: Language, date: String): Int =
+        prefs.getInt("${KEY_GAME_ATTEMPTS_PREFIX}${language.name}_$date", GameState.MAX_LIVES)
+
+    fun getGameHints(language: Language, date: String): Int =
+        prefs.getInt("${KEY_GAME_HINTS_PREFIX}${language.name}_$date", 0)
+
+    // ==================== STATISTICS ====================
+
+    fun getStats(language: Language): PlayerStats {
+        val key = "${KEY_STATS_PREFIX}${language.name}"
+        val distribution = prefs.getString("${key}_distribution", null)
+            ?.split(",")?.mapNotNull { it.toIntOrNull() }
+            ?.takeIf { it.size == GameState.MAX_LIVES }
+            ?: List(GameState.MAX_LIVES) { 0 }
+        return PlayerStats(
+            played = prefs.getInt("${key}_played", 0),
+            wins = prefs.getInt("${key}_wins", 0),
+            currentStreak = prefs.getInt("${key}_streak", 0),
+            maxStreak = prefs.getInt("${key}_maxStreak", 0),
+            lastWinDay = prefs.getInt("${key}_lastWinDay", 0),
+            distribution = distribution
+        )
     }
 
-    fun wasGameWon(language: Language, date: String): Boolean {
-        val gameKey = "${language.name}_$date"
-        val key = "${KEY_GAME_RESULT_PREFIX}$gameKey"
-        val wasWon = prefs.getBoolean(key, false)
-        println("🏆 wasGameWon($language, $date) = $wasWon")
-        return wasWon
+    private fun saveStats(language: Language, stats: PlayerStats) {
+        val key = "${KEY_STATS_PREFIX}${language.name}"
+        prefs.edit()
+            .putInt("${key}_played", stats.played)
+            .putInt("${key}_wins", stats.wins)
+            .putInt("${key}_streak", stats.currentStreak)
+            .putInt("${key}_maxStreak", stats.maxStreak)
+            .putInt("${key}_lastWinDay", stats.lastWinDay)
+            .putString("${key}_distribution", stats.distribution.joinToString(","))
+            .apply()
     }
 
-    fun getGameResult(language: Language, date: String): Boolean? {
-        if (!isGameCompleted(language, date)) {
-            return null
+    fun getAllStats(): Map<Language, PlayerStats> = Language.entries.associateWith { getStats(it) }
+
+    /** Les versions ≤ 1.0.1 n'avaient pas de stats : on reconstruit parties jouées / gagnées. */
+    private fun migrateStatsIfNeeded() {
+        if (prefs.getBoolean(KEY_STATS_MIGRATED, false)) return
+        Language.entries.forEach { language ->
+            val prefix = "${KEY_GAME_COMPLETED_PREFIX}${language.name}_"
+            val dates = prefs.all.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }
+            if (dates.isNotEmpty()) {
+                val wins = dates.count { wasGameWon(language, it) }
+                saveStats(language, getStats(language).copy(played = dates.size, wins = wins))
+            }
         }
-        return wasGameWon(language, date)
+        prefs.edit().putBoolean(KEY_STATS_MIGRATED, true).apply()
     }
 
     // ==================== IN-PROGRESS GAME STATE ====================
 
-    /**
-     * Modèle représentant l'état sauvegardé d'une partie en cours
-     */
     data class SavedGameState(
         val lives: Int,
         val revealedCount: Int,
-        val userGuess: String
+        val userGuess: String,
+        val hintsUsed: Int
     )
 
-    /**
-     * Sauvegarde l'état en cours de la partie (appelé à chaque action du joueur)
-     */
-    fun saveCurrentGameState(
-        language: Language,
-        date: String,
-        lives: Int,
-        revealedCount: Int,
-        userGuess: String
-    ) {
+    /** Sauvegarde l'état en cours de la partie (appelé à chaque action du joueur). */
+    fun saveCurrentGameState(language: Language, date: String, state: SavedGameState) {
         val key = "${KEY_GAME_STATE_PREFIX}${language.name}_$date"
         prefs.edit()
-            .putInt("${key}_lives", lives)
-            .putInt("${key}_revealedCount", revealedCount)
-            .putString("${key}_userGuess", userGuess)
+            .putInt("${key}_lives", state.lives)
+            .putInt("${key}_revealedCount", state.revealedCount)
+            .putString("${key}_userGuess", state.userGuess)
+            .putInt("${key}_hintsUsed", state.hintsUsed)
             .apply()
-        println("💾 État sauvegardé: $language/$date → lives=$lives, revealed=$revealedCount, guess='$userGuess'")
     }
 
-    /**
-     * Récupère l'état sauvegardé d'une partie en cours.
-     * Retourne null si aucun état n'existe (nouvelle partie).
-     */
+    /** Retourne null si aucun état n'existe (nouvelle partie). */
     fun getSavedGameState(language: Language, date: String): SavedGameState? {
         val key = "${KEY_GAME_STATE_PREFIX}${language.name}_$date"
         val lives = prefs.getInt("${key}_lives", -1)
+        if (lives == -1) return null
 
-        // -1 signifie qu'aucun état n'a été sauvegardé
-        if (lives == -1) {
-            println("ℹ️ Aucun état sauvegardé pour $language/$date → nouvelle partie")
-            return null
-        }
-
-        val state = SavedGameState(
+        return SavedGameState(
             lives = lives,
-            revealedCount = prefs.getInt("${key}_revealedCount", 0),
-            userGuess = prefs.getString("${key}_userGuess", "") ?: ""
+            revealedCount = prefs.getInt("${key}_revealedCount", 1),
+            userGuess = prefs.getString("${key}_userGuess", "") ?: "",
+            hintsUsed = prefs.getInt("${key}_hintsUsed", 0)
         )
-        println("✅ État restauré: $language/$date → $state")
-        return state
     }
 
-    /**
-     * Efface l'état en cours (appelé quand la partie est terminée : victoire ou défaite)
-     */
+    /** Efface l'état en cours (partie terminée : victoire ou défaite). */
     fun clearCurrentGameState(language: Language, date: String) {
         val key = "${KEY_GAME_STATE_PREFIX}${language.name}_$date"
         prefs.edit()
             .remove("${key}_lives")
             .remove("${key}_revealedCount")
             .remove("${key}_userGuess")
+            .remove("${key}_hintsUsed")
             .apply()
-        println("🗑️ État effacé: $language/$date")
     }
 
-    // ==================== CLEAR / RESET ====================
+    // ==================== RESET ====================
 
-    fun clearAllGameResults() {
+    /** Remet à zéro scores et statistiques (les parties du jour restent jouées). */
+    fun clearScoresAndStats() {
         val editor = prefs.edit()
         prefs.all.keys.forEach { key ->
-            if (key.startsWith(KEY_GAME_COMPLETED_PREFIX) ||
-                key.startsWith(KEY_GAME_RESULT_PREFIX)
-            ) {
+            if (key.startsWith(KEY_SCORE_PREFIX) || key.startsWith(KEY_STATS_PREFIX)) {
                 editor.remove(key)
             }
         }
         editor.apply()
-        println("🗑️ Tous les résultats de jeux ont été effacés")
-    }
-
-    fun clearAllScores() {
-        val editor = prefs.edit()
-        prefs.all.keys.forEach { key ->
-            if (key.startsWith(KEY_SCORE_PREFIX)) {
-                editor.remove(key)
-            }
-        }
-        editor.apply()
-        println("🗑️ Tous les scores ont été effacés")
-    }
-
-    fun clearAll() {
-        prefs.edit().clear().apply()
-        println("🗑️ Toutes les données ont été effacées")
     }
 }
