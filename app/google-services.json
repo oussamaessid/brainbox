@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "8538113849",
+    "project_id": "brainbox-daily",
+    "storage_bucket": "brainbox-daily.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:8538113849:android:aaa7b16e9173afd1b00ae8",
+        "android_client_info": {
+          "package_name": "app.brainbox"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD93zeP1FBlU5mXPBPO-CMo2M0shT1wu50"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

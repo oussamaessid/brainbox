@@ -14,7 +14,9 @@
 
    `keytool -list -v -keystore keys/brainbox-upload.jks -alias key0`
 
-La clé, `keystore.properties`, `local.properties` et `google-services.json` sont volontairement exclus de Git.
+La clé, `keystore.properties` et `local.properties` sont volontairement exclus de Git. Le fichier
+`app/google-services.json` contient uniquement la configuration publique de l'application Android
+Firebase `app.brainbox` et reste versionné pour permettre une compilation identique sur un autre PC.
 
 ## Construire et contrôler la release
 
